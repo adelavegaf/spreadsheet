@@ -1,88 +1,149 @@
+/*
+Grammar
+
+<valid cell> ::= <number>
+                 | <formula>
+
+<formula> ::= “=“ <expression>
+
+<expression> ::= <value>
+                 | <value> <operator> <expression>
+
+<value> ::= <number>
+            | <signed number>
+            | <cell>
+*/
+
 struct Spreadsheet {
-    grid: Vec<Vec<Value>>,
+    grid: [[Cell; 100]; 100],
 }
-#[derive(Debug, PartialEq, Clone)]
-enum Value {
-    Num(f64),
-    Text(String),
-    Formula(String),
-    Empty,
+
+struct Cell {
+    raw: String,
+    out: f64,
 }
 
 impl Spreadsheet {
-    fn new() -> Spreadsheet {
-        Spreadsheet {
-            grid: vec![vec![Value::Empty; 100]; 100],
-        }
-    }
-
     fn set(&mut self, row: usize, col: usize, raw_val: &str) {
-        self.grid[row][col] = parse_val(raw_val);
+        todo!()
     }
+}
 
-    fn eval(&self, row: usize, col: usize) -> String {
-        match &self.grid[row][col] {
-            Value::Num(n) => n.to_string(),
-            Value::Text(s) => s.to_string(),
-            Value::Formula(f) => f.to_string(),
-            Value::Empty => "".to_string(),
+type ParseResult<'a, Output> = Result<(Output, &'a str), &'a str>;
+
+trait Parser<'a, T> {
+    fn parse(&self, input: &'a str) -> ParseResult<'a, T>;
+}
+
+impl<'a, F, T> Parser<'a, T> for F
+where
+    F: Fn(&'a str) -> ParseResult<'a, T>,
+{
+    fn parse(&self, input: &'a str) -> ParseResult<'a, T> {
+        self(input)
+    }
+}
+
+fn formula(input: &str) -> ParseResult<&str> {
+    let (_, input) = equal(input)?;
+    // let (_, input) = parse_expression(input)?;
+    todo!()
+}
+
+fn equal(input: &str) -> ParseResult<()> {
+    literal("=").parse(input)
+}
+
+fn number(input: &str) -> ParseResult<f64> {
+    let (num_vec, input) = one_or_more(predicate(any_char, |c| c.is_numeric())).parse(input)?;
+    let num = num_vec.into_iter().collect::<String>().parse().unwrap();
+    Ok((num, input))
+}
+
+// Generic Parsers
+
+fn any_char(input: &str) -> ParseResult<char> {
+    if let Some(c) = input.chars().next() {
+        Ok((c, &input[c.len_utf8()..]))
+    } else {
+        Err("End of string")
+    }
+}
+
+// Combinators
+
+fn one_or_more<'a, A>(parser: impl Parser<'a, A>) -> impl Parser<'a, Vec<A>> {
+    move |mut input: &'a str| {
+        let mut results = vec![];
+        let (res, next_input) = parser.parse(input)?;
+        results.push(res);
+        input = next_input;
+        while let Ok((res, next_input)) = parser.parse(input) {
+            results.push(res);
+            input = next_input;
+        }
+        Ok((results, input))
+    }
+}
+
+fn zero_or_more<'a, A>(parser: impl Parser<'a, A>) -> impl Parser<'a, Vec<A>> {
+    move |mut input: &'a str| {
+        let mut results = vec![];
+        while let Ok((res, next_input)) = parser.parse(input) {
+            results.push(res);
+            input = next_input;
+        }
+        Ok((results, input))
+    }
+}
+
+fn predicate<'a, A>(
+    parser: impl Parser<'a, A>,
+    pred_fn: impl Fn(&A) -> bool,
+) -> impl Parser<'a, A> {
+    move |input: &'a str| {
+        let (res, input) = parser.parse(input)?;
+        if pred_fn(&res) {
+            Ok((res, input))
+        } else {
+            Err("Predicate failed")
         }
     }
 }
 
-fn parse_val(input: &str) -> Value {
-    // TODO: if we are going for performance, all the String conversions are going
-    // to cost us.
-    match input {
-        i if i.starts_with('=') => Value::Formula(i['='.len_utf8()..].to_string()),
-        i if i.parse::<f64>().is_ok() => Value::Num(i.parse().unwrap()),
-        _ => Value::Text(input.to_string()),
+fn literal<'a>(pattern: &'static str) -> impl Parser<'a, ()> {
+    move |input: &'a str| {
+        if input.starts_with(pattern) {
+            Ok(((), &input[pattern.len()..]))
+        } else {
+            Err("no match")
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn parse_equal_ok() {
+        let (_, rest) = equal("=a").unwrap();
+        assert_eq!(rest, "a");
+    }
 
-    mod spreadsheet {
-        use super::*;
-        #[test]
-        fn new_creates_empty_grid() {
-            let s = Spreadsheet::new();
-            for row in &s.grid {
-                for val in row {
-                    assert_eq!(val, &Value::Empty);
-                }
-            }
-            assert_eq!(s.grid.len(), 100);
-            assert_eq!(s.grid[0].len(), 100);
-        }
+    #[test]
+    fn parse_equal_err() {
+        assert!(equal("a=").is_err());
+    }
 
-        #[test]
-        fn set_parses_formula() {
-            let mut s = Spreadsheet::new();
-            let row = 12;
-            let col = 33;
-            s.set(row, col, "=1+1");
-            assert_eq!(s.grid[row][col], Value::Formula("1+1".to_string()));
-        }
+    #[test]
+    fn parse_number_ok() {
+        let (num, rest) = number("123 what").unwrap();
+        assert_eq!(num, 123.0);
+        assert_eq!(rest, " what");
+    }
 
-        #[test]
-        fn set_parses_num() {
-            let mut s = Spreadsheet::new();
-            let row = 1;
-            let col = 44;
-            s.set(row, col, "1.78");
-            assert_eq!(s.grid[row][col], Value::Num(1.78));
-        }
-
-        #[test]
-        fn set_parses_text() {
-            let mut s = Spreadsheet::new();
-            let row = 1;
-            let col = 44;
-            s.set(row, col, "1.78a");
-            assert_eq!(s.grid[row][col], Value::Text("1.78a".to_string()));
-        }
+    #[test]
+    fn parse_number_err() {
+        assert!(number(" 123").is_err());
     }
 }
