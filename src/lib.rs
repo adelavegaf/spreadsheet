@@ -31,7 +31,7 @@ enum Operator {
 impl Operator {
     fn eval(&self, val1: f64, val2: f64) -> f64 {
         match self {
-            Sum => val1 + val2,
+            Operator::Sum => val1 + val2,
         }
     }
 }
