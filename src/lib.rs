@@ -1,17 +1,16 @@
 /*
-Grammar
+Formula Grammar
 
 <valid cell> ::= <number>
                  | <formula>
 
-<formula> ::= “=“ <expression>
+<formula> ::= “=“ <Expr>
 
-<expression> ::= <value>
-                 | <value> <operator> <expression>
-
-<value> ::= <number>
-            | <signed number>
-            | <cell>
+https://stackoverflow.com/questions/9785553/how-does-a-simple-calculator-with-parentheses-work
+Expr ::= Term ('+' Term | '-' Term)*
+Term ::= Factor ('*' Factor | '/' Factor)*
+Factor ::= ['-'] (Number | '(' Expr ')')
+Number ::= Digit+
 */
 
 struct Spreadsheet {
@@ -26,12 +25,18 @@ struct Cell {
 #[derive(Debug, PartialEq)]
 enum Operator {
     Sum,
+    Sub,
+    Mul,
+    Div,
 }
 
 impl Operator {
     fn eval(&self, val1: f64, val2: f64) -> f64 {
         match self {
             Operator::Sum => val1 + val2,
+            Operator::Sub => val1 - val2,
+            Operator::Mul => val1 * val2,
+            Operator::Div => val1 / val2,
         }
     }
 }
@@ -57,30 +62,11 @@ where
     }
 }
 
-fn eval_formula(input: &str) -> Result<f64, &str> {
-    let (expr, _) = formula(input)?;
-    let (first_val, rest_expr) = expr;
-    if rest_expr.is_empty() {
-        return Ok(first_val);
-    }
-
-    let mut expr_iter = rest_expr.into_iter().rev();
-    let (last_op, last_val) = expr_iter.next().unwrap();
-    let mut op = last_op;
-    let mut res = last_val;
-    for (next_op, next_val) in expr_iter {
-        res = op.eval(next_val, res);
-        op = next_op;
-    }
-    res = op.eval(first_val, res);
-    Ok(res)
-}
-
 // Spreadsheet Parsers
 
-fn formula(input: &str) -> ParseResult<(f64, Vec<(Operator, f64)>)> {
-    let (_, input) = equal(input)?;
-    let (res, input) = expression(input)?;
+fn formula(input: &str) -> ParseResult<f64> {
+    let (_, input) = literal("=").parse(input)?;
+    let (res, input) = expr(input)?;
     if input.is_empty() {
         Ok((res, input))
     } else {
@@ -88,33 +74,66 @@ fn formula(input: &str) -> ParseResult<(f64, Vec<(Operator, f64)>)> {
     }
 }
 
-fn equal(input: &str) -> ParseResult<()> {
-    literal("=").parse(input)
+fn expr(input: &str) -> ParseResult<f64> {
+    // Expr ::= Term ('+' Term | '-' Term)*
+    let (first_term, input) = term(input)?;
+    let sum = map(literal("+"), |_| Operator::Sum);
+    let sub = map(literal("-"), |_| Operator::Sub);
+    let sum_term = pair(sum, term);
+    let sub_term = pair(sub, term);
+    let (others, input) = zero_or_more(either(sum_term, sub_term)).parse(input)?;
+    let e = eval(first_term, others);
+    Ok((e, input))
 }
 
-fn expression(input: &str) -> ParseResult<(f64, Vec<(Operator, f64)>)> {
-    let (first_val, input) = number(input)?;
-    let (other_vals, input) = operator_and_value(input)?;
-    Ok(((first_val, other_vals), input))
+fn term(input: &str) -> ParseResult<f64> {
+    // Term ::= Factor ('*' Factor | '/' Factor)*
+    let (first_factor, input) = factor(input)?;
+    let mul = map(literal("*"), |_| Operator::Mul);
+    let div = map(literal("/"), |_| Operator::Div);
+    let mul_fact = pair(mul, factor);
+    let div_fact = pair(div, factor);
+    let (others, input) = zero_or_more(either(mul_fact, div_fact)).parse(input)?;
+    let t = eval(first_factor, others);
+    Ok((t, input))
 }
 
-fn operator_and_value(input: &str) -> ParseResult<Vec<(Operator, f64)>> {
-    zero_or_more(pair(operator, number)).parse(input)
+fn factor(mut input: &str) -> ParseResult<f64> {
+    // Factor ::= ['-'] (Number | '(' Expr ')')
+    let mut coefficient = 1.;
+    if let Ok((_, next_input)) = literal("-").parse(input) {
+        coefficient = -1.;
+        input = next_input;
+    }
+    let paren_expr = right(literal("("), left(expr, literal(")")));
+    let num_or_expr = either(number, paren_expr);
+    let (num, input) = num_or_expr.parse(input)?;
+    Ok((coefficient * num, input))
+}
+
+fn eval(first_val: f64, others: Vec<(Operator, f64)>) -> f64 {
+    if others.is_empty() {
+        return first_val;
+    }
+
+    let mut others_iter = others.into_iter().rev();
+    let (last_op, last_val) = others_iter.next().unwrap();
+    let mut op = last_op;
+    let mut res = last_val;
+    for (next_op, next_val) in others_iter {
+        res = op.eval(next_val, res);
+        op = next_op;
+    }
+    op.eval(first_val, res)
 }
 
 fn number(input: &str) -> ParseResult<f64> {
+    // Number ::= Digit+
     let (num_vec, input) = one_or_more(predicate(any_char, |c| c.is_numeric())).parse(input)?;
     let num = num_vec.into_iter().collect::<String>().parse().unwrap();
     Ok((num, input))
 }
 
-fn operator(input: &str) -> ParseResult<Operator> {
-    if let Ok((_, input)) = literal("+").parse(input) {
-        Ok((Operator::Sum, input))
-    } else {
-        Err("unknown operator")
-    }
-}
 // Generic Parsers
 
 fn any_char(input: &str) -> ParseResult<char> {
@@ -126,6 +145,34 @@ fn any_char(input: &str) -> ParseResult<char> {
 }
 
 // Combinators
+
+fn right<'a, A, B>(parser1: impl Parser<'a, A>, parser2: impl Parser<'a, B>) -> impl Parser<'a, B> {
+    move |input: &'a str| {
+        let (_, input) = parser1.parse(input)?;
+        let (b, input) = parser2.parse(input)?;
+        Ok((b, input))
+    }
+}
+
+fn left<'a, A, B>(parser1: impl Parser<'a, A>, parser2: impl Parser<'a, B>) -> impl Parser<'a, A> {
+    move |input: &'a str| {
+        let (a, input) = parser1.parse(input)?;
+        let (_, input) = parser2.parse(input)?;
+        Ok((a, input))
+    }
+}
+
+fn either<'a, A>(parser1: impl Parser<'a, A>, parser2: impl Parser<'a, A>) -> impl Parser<'a, A> {
+    move |input: &'a str| {
+        if let Ok(res) = parser1.parse(input) {
+            Ok(res)
+        } else if let Ok(res) = parser2.parse(input) {
+            Ok(res)
+        } else {
+            Err("Parsers unable to parse input")
+        }
+    }
+}
 
 fn one_or_more<'a, A>(parser: impl Parser<'a, A>) -> impl Parser<'a, Vec<A>> {
     move |mut input: &'a str| {
@@ -149,6 +196,16 @@ fn zero_or_more<'a, A>(parser: impl Parser<'a, A>) -> impl Parser<'a, Vec<A>> {
             input = next_input;
         }
         Ok((results, input))
+    }
+}
+
+fn map<'a, A, F, B>(parser: impl Parser<'a, A>, f: F) -> impl Parser<'a, B>
+where
+    F: Fn(A) -> B,
+{
+    move |input| {
+        let (resp, input) = parser.parse(input)?;
+        Ok((f(resp), input))
     }
 }
 
@@ -192,71 +249,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn eval_formula_with_numbers() {
-        assert_eq!(eval_formula("=1+1+1"), Ok(3.));
-        assert_eq!(eval_formula("=1+15+1"), Ok(17.));
-        assert_eq!(eval_formula("=4"), Ok(4.));
+    fn formula_with_numbers() {
+        assert_eq!(formula("=1+2*10-2"), Ok((19., "")));
+        assert_eq!(formula("=1+-(1+2*10)"), Ok((-20., "")));
     }
 
-    #[test]
-    fn parse_formula() {
-        let (resp, input) = formula("=123").unwrap();
-        assert_eq!(resp, (123.0, vec![]));
-        assert_eq!(input, "");
-
-        assert!(expression("=2+").is_err());
-    }
-    #[test]
-    fn parse_equal() {
-        let (_, rest) = equal("=a").unwrap();
-        assert_eq!(rest, "a");
-        assert!(equal("a=").is_err());
-    }
-
-    #[test]
-    fn parse_expression() {
-        let (resp, input) = expression("123").unwrap();
-        assert_eq!(resp, (123.0, vec![]));
-        assert_eq!(input, "");
-
-        let (resp, input) = expression("1+2+3").unwrap();
-        assert_eq!(
-            resp,
-            (1.0, vec![(Operator::Sum, 2.0), (Operator::Sum, 3.0)])
-        );
-        assert_eq!(input, "");
-
-        let (resp, input) = expression("2+").unwrap();
-        assert_eq!(resp, (2.0, vec![]));
-        assert_eq!(input, "+");
-
-        assert!(expression("+2+3").is_err());
-    }
-
-    #[test]
-    fn parse_operator_and_value_number() {
-        assert_eq!(
-            operator_and_value("+123 "),
-            Ok((vec![(Operator::Sum, 123.0)], " "))
-        );
-        assert_eq!(operator_and_value("123+"), Ok((vec![], "123+")));
-    }
-
-    #[test]
-    fn parse_number_ok() {
-        let (num, rest) = number("123 what").unwrap();
-        assert_eq!(num, 123.0);
-        assert_eq!(rest, " what");
-    }
-
-    #[test]
-    fn parse_number_err() {
-        assert!(number(" 123").is_err());
-    }
-
-    #[test]
-    fn parse_sum_operator() {
-        assert_eq!(operator("+ "), Ok((Operator::Sum, " ")));
-        assert!(operator(" +").is_err());
+    fn formula_with_err() {
+        assert!(formula("4").is_err());
     }
 }
