@@ -1,15 +1,17 @@
 /*
 Formula Grammar
 
-<valid cell> ::= <number>
-                 | <formula>
-
-<formula> ::= “=“ <Expr>
+Cell ::= Number | Formula
+Formula ::= “=“ Expr
 
 https://stackoverflow.com/questions/9785553/how-does-a-simple-calculator-with-parentheses-work
 Expr ::= Term ('+' Term | '-' Term)*
 Term ::= Factor ('*' Factor | '/' Factor)*
-Factor ::= ['-'] (Number | '(' Expr ')')
+Factor ::= ['-'] (Value | '(' Expr ')')
+Value ::= Function | Reference | Number
+Formula ::= FnId '(' Range ')'
+Range ::= Reference '->' Reference
+Reference ::= '(' Number ',' Number ')'
 Number ::= Digit+
 */
 
@@ -106,9 +108,26 @@ fn factor(mut input: &str) -> ParseResult<f64> {
         input = next_input;
     }
     let paren_expr = right(literal("("), left(expr, literal(")")));
-    let num_or_expr = either(number, paren_expr);
-    let (num, input) = num_or_expr.parse(input)?;
+    let val_or_expr = either(value, paren_expr);
+    let (num, input) = val_or_expr.parse(input)?;
     Ok((coefficient * num, input))
+}
+
+fn value(input: &str) -> ParseResult<f64> {
+    // Value ::= Reference | Function | Number
+    either(reference, number).parse(input)
+}
+
+fn reference(input: &str) -> ParseResult<f64> {
+    // Reference ::= '[' Number ',' Number ']'
+    let (_, input) = literal("[").parse(input)?;
+    let (row, input) = number(input)?;
+    let (_, input) = literal(",").parse(input)?;
+    let (col, input) = number(input)?;
+    let (_, input) = literal("]").parse(input)?;
+    // At this point we should grab the contents of the cell at row, col and
+    let (val, _) = formula("=100")?;
+    Ok((val, input))
 }
 
 fn eval(first_val: f64, others: Vec<(Operator, f64)>) -> f64 {
@@ -252,6 +271,7 @@ mod tests {
     fn formula_with_numbers() {
         assert_eq!(formula("=1+2*10-2"), Ok((19., "")));
         assert_eq!(formula("=1+-(1+2*10)"), Ok((-20., "")));
+        assert_eq!(formula("=123+[1,1]"), Ok((223., "")));
     }
 
     fn formula_with_err() {
