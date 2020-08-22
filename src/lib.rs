@@ -17,7 +17,7 @@ Number ::= Digit+
 
 enum ExprTree {
     Empty,
-    Value(f64),
+    Val(Value),
     Unary(Box<UnaryNode>),
     Binary(Box<BinaryNode>),
 }
@@ -31,6 +31,11 @@ struct BinaryNode {
     op: BinaryOp,
     left: ExprTree,
     right: ExprTree,
+}
+
+enum Value {
+    Num(f64),
+    Ref(usize, usize),
 }
 
 struct Spreadsheet {
@@ -162,20 +167,21 @@ fn factor(mut input: &str) -> ParseResult<ExprTree> {
 
 fn value(input: &str) -> ParseResult<ExprTree> {
     // Value ::= Reference | Function | Number
-    let (num, input) = number(input)?;
-    Ok((ExprTree::Value(num), input))
+    let num_val = map(number, Value::Num);
+    let num_or_ref = either(num_val, reference);
+    let (val, input) = num_or_ref.parse(input)?;
+    Ok((ExprTree::Val(val), input))
 }
 
-fn reference(input: &str) -> ParseResult<f64> {
+fn reference(input: &str) -> ParseResult<Value> {
     // Reference ::= '[' Number ',' Number ']'
     let (_, input) = literal("[").parse(input)?;
+    // TODO(adelavega): We should a float, and int parser, and use int here.
     let (row, input) = number(input)?;
     let (_, input) = literal(",").parse(input)?;
     let (col, input) = number(input)?;
     let (_, input) = literal("]").parse(input)?;
-    // At this point we should grab the contents of the cell at row, col and
-    let (val, _) = formula("=100")?;
-    todo!();
+    Ok((Value::Ref(row as usize, col as usize), input))
 }
 
 fn reduce_trees(first: ExprTree, others: Vec<(BinaryOp, ExprTree)>) -> ExprTree {
@@ -204,7 +210,10 @@ fn reduce_trees(first: ExprTree, others: Vec<(BinaryOp, ExprTree)>) -> ExprTree 
 
 fn eval(tree: ExprTree) -> f64 {
     match tree {
-        ExprTree::Value(val) => val,
+        ExprTree::Val(val) => match val {
+            Value::Num(n) => n,
+            Value::Ref(i, j) => 100.,
+        },
         ExprTree::Unary(u) => u.op.apply(eval(u.child)),
         ExprTree::Binary(b) => b.op.apply(eval(b.left), eval(b.right)),
         ExprTree::Empty => panic!("Found empty tree node"),
