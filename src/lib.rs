@@ -11,9 +11,27 @@ Factor ::= ['-'] (Value | '(' Expr ')')
 Value ::= Function | Reference | Number
 Formula ::= FnId '(' Range ')'
 Range ::= Reference '->' Reference
-Reference ::= '(' Number ',' Number ')'
+Reference ::= '[' Number ',' Number ']'
 Number ::= Digit+
 */
+
+enum ExprTree {
+    Empty,
+    Value(f64),
+    Unary(Box<UnaryNode>),
+    Binary(Box<BinaryNode>),
+}
+
+struct UnaryNode {
+    op: UnaryOp,
+    child: ExprTree,
+}
+
+struct BinaryNode {
+    op: BinaryOp,
+    left: ExprTree,
+    right: ExprTree,
+}
 
 struct Spreadsheet {
     grid: [[Cell; 100]; 100],
@@ -25,28 +43,49 @@ struct Cell {
 }
 
 #[derive(Debug, PartialEq)]
-enum Operator {
+enum UnaryOp {
+    Not,
+}
+
+impl UnaryOp {
+    fn apply(&self, val: f64) -> f64 {
+        match self {
+            UnaryOp::Not => -1. * val,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum BinaryOp {
     Sum,
     Sub,
     Mul,
     Div,
 }
 
-impl Operator {
-    fn eval(&self, val1: f64, val2: f64) -> f64 {
+impl BinaryOp {
+    fn apply(&self, val1: f64, val2: f64) -> f64 {
         match self {
-            Operator::Sum => val1 + val2,
-            Operator::Sub => val1 - val2,
-            Operator::Mul => val1 * val2,
-            Operator::Div => val1 / val2,
+            BinaryOp::Sum => val1 + val2,
+            BinaryOp::Sub => val1 - val2,
+            BinaryOp::Mul => val1 * val2,
+            BinaryOp::Div => val1 / val2,
         }
     }
 }
 
 impl Spreadsheet {
-    fn set(&mut self, row: usize, col: usize, raw_val: &str) {
-        todo!()
+    fn set(&mut self, row: usize, col: usize, raw: String) -> Result<(), &str> {
+        if self.grid.len() <= row || self.grid[0].len() <= col {
+            return Err("out of bounds");
+        }
+        let cell = &mut self.grid[row][col];
+        cell.raw = raw;
+        Ok(())
     }
+
+    // TODO: Lets move parsing code into the spreadsheet implementation to have
+    // access to mut self. This way we can set references as we are parsing.
 }
 
 type ParseResult<'a, Output> = Result<(Output, &'a str), &'a str>;
@@ -66,7 +105,7 @@ where
 
 // Spreadsheet Parsers
 
-fn formula(input: &str) -> ParseResult<f64> {
+fn formula(input: &str) -> ParseResult<ExprTree> {
     let (_, input) = literal("=").parse(input)?;
     let (res, input) = expr(input)?;
     if input.is_empty() {
@@ -76,46 +115,55 @@ fn formula(input: &str) -> ParseResult<f64> {
     }
 }
 
-fn expr(input: &str) -> ParseResult<f64> {
+fn expr(input: &str) -> ParseResult<ExprTree> {
     // Expr ::= Term ('+' Term | '-' Term)*
     let (first_term, input) = term(input)?;
-    let sum = map(literal("+"), |_| Operator::Sum);
-    let sub = map(literal("-"), |_| Operator::Sub);
+    let sum = map(literal("+"), |_| BinaryOp::Sum);
+    let sub = map(literal("-"), |_| BinaryOp::Sub);
     let sum_term = pair(sum, term);
     let sub_term = pair(sub, term);
     let (others, input) = zero_or_more(either(sum_term, sub_term)).parse(input)?;
-    let e = eval(first_term, others);
-    Ok((e, input))
+    Ok((reduce_trees(first_term, others), input))
 }
 
-fn term(input: &str) -> ParseResult<f64> {
+fn term(input: &str) -> ParseResult<ExprTree> {
     // Term ::= Factor ('*' Factor | '/' Factor)*
     let (first_factor, input) = factor(input)?;
-    let mul = map(literal("*"), |_| Operator::Mul);
-    let div = map(literal("/"), |_| Operator::Div);
+    let mul = map(literal("*"), |_| BinaryOp::Mul);
+    let div = map(literal("/"), |_| BinaryOp::Div);
     let mul_fact = pair(mul, factor);
     let div_fact = pair(div, factor);
     let (others, input) = zero_or_more(either(mul_fact, div_fact)).parse(input)?;
-    let t = eval(first_factor, others);
-    Ok((t, input))
+    Ok((reduce_trees(first_factor, others), input))
 }
 
-fn factor(mut input: &str) -> ParseResult<f64> {
+fn factor(mut input: &str) -> ParseResult<ExprTree> {
     // Factor ::= ['-'] (Number | '(' Expr ')')
-    let mut coefficient = 1.;
+    let mut negate = false;
     if let Ok((_, next_input)) = literal("-").parse(input) {
-        coefficient = -1.;
+        negate = true;
         input = next_input;
     }
     let paren_expr = right(literal("("), left(expr, literal(")")));
     let val_or_expr = either(value, paren_expr);
-    let (num, input) = val_or_expr.parse(input)?;
-    Ok((coefficient * num, input))
+    let (child, input) = val_or_expr.parse(input)?;
+
+    if negate {
+        let node = UnaryNode {
+            op: UnaryOp::Not,
+            child,
+        };
+        let tree = ExprTree::Unary(Box::new(node));
+        Ok((tree, input))
+    } else {
+        Ok((child, input))
+    }
 }
 
-fn value(input: &str) -> ParseResult<f64> {
+fn value(input: &str) -> ParseResult<ExprTree> {
     // Value ::= Reference | Function | Number
-    either(reference, number).parse(input)
+    let (num, input) = number(input)?;
+    Ok((ExprTree::Value(num), input))
 }
 
 fn reference(input: &str) -> ParseResult<f64> {
@@ -127,23 +175,40 @@ fn reference(input: &str) -> ParseResult<f64> {
     let (_, input) = literal("]").parse(input)?;
     // At this point we should grab the contents of the cell at row, col and
     let (val, _) = formula("=100")?;
-    Ok((val, input))
+    todo!();
 }
 
-fn eval(first_val: f64, others: Vec<(Operator, f64)>) -> f64 {
+fn reduce_trees(first: ExprTree, others: Vec<(BinaryOp, ExprTree)>) -> ExprTree {
     if others.is_empty() {
-        return first_val;
+        return first;
     }
-
     let mut others_iter = others.into_iter().rev();
-    let (last_op, last_val) = others_iter.next().unwrap();
-    let mut op = last_op;
-    let mut res = last_val;
-    for (next_op, next_val) in others_iter {
-        res = op.eval(next_val, res);
-        op = next_op;
+
+    let (op, right) = others_iter.next().unwrap();
+    let mut node = BinaryNode {
+        op,
+        left: ExprTree::Empty,
+        right,
+    };
+    for (op, left) in others_iter {
+        node.left = left;
+        node = BinaryNode {
+            op,
+            left: ExprTree::Empty,
+            right: ExprTree::Binary(Box::new(node)),
+        };
     }
-    op.eval(first_val, res)
+    node.left = first;
+    ExprTree::Binary(Box::new(node))
+}
+
+fn eval(tree: ExprTree) -> f64 {
+    match tree {
+        ExprTree::Value(val) => val,
+        ExprTree::Unary(u) => u.op.apply(eval(u.child)),
+        ExprTree::Binary(b) => b.op.apply(eval(b.left), eval(b.right)),
+        ExprTree::Empty => panic!("Found empty tree node"),
+    }
 }
 
 fn number(input: &str) -> ParseResult<f64> {
@@ -269,12 +334,9 @@ mod tests {
 
     #[test]
     fn formula_with_numbers() {
-        assert_eq!(formula("=1+2*10-2"), Ok((19., "")));
-        assert_eq!(formula("=1+-(1+2*10)"), Ok((-20., "")));
-        assert_eq!(formula("=123+[1,1]"), Ok((223., "")));
-    }
-
-    fn formula_with_err() {
-        assert!(formula("4").is_err());
+        let (expr, _) = formula("=1+2*10-2").unwrap();
+        assert_eq!(eval(expr), 19.);
+        let (expr, _) = formula("=1+-(1+2*10)").unwrap();
+        assert_eq!(eval(expr), -20.);
     }
 }
