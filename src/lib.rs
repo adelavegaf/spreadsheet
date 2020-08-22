@@ -39,7 +39,7 @@ enum Value {
 }
 
 struct Spreadsheet {
-    grid: [[Cell; 100]; 100],
+    grid: [[f64; 100]; 100],
 }
 
 struct Cell {
@@ -84,9 +84,10 @@ impl Spreadsheet {
         if self.grid.len() <= row || self.grid[0].len() <= col {
             return Err("out of bounds");
         }
-        let cell = &mut self.grid[row][col];
-        cell.raw = raw;
-        Ok(())
+        todo!()
+        // let cell = &mut self.grid[row][col];
+        // cell.raw = raw;
+        // Ok(())
     }
 
     // TODO: Lets move parsing code into the spreadsheet implementation to have
@@ -208,14 +209,14 @@ fn reduce_trees(first: ExprTree, others: Vec<(BinaryOp, ExprTree)>) -> ExprTree 
     ExprTree::Binary(Box::new(node))
 }
 
-fn eval(tree: ExprTree) -> f64 {
+fn eval(ss: &Spreadsheet, tree: ExprTree) -> f64 {
     match tree {
         ExprTree::Val(val) => match val {
             Value::Num(n) => n,
-            Value::Ref(i, j) => 100.,
+            Value::Ref(i, j) => ss.grid[i][j],
         },
-        ExprTree::Unary(u) => u.op.apply(eval(u.child)),
-        ExprTree::Binary(b) => b.op.apply(eval(b.left), eval(b.right)),
+        ExprTree::Unary(u) => u.op.apply(eval(ss, u.child)),
+        ExprTree::Binary(b) => b.op.apply(eval(ss, b.left), eval(ss, b.right)),
         ExprTree::Empty => panic!("Found empty tree node"),
     }
 }
@@ -343,9 +344,23 @@ mod tests {
 
     #[test]
     fn formula_with_numbers() {
+        let ss = Spreadsheet {
+            grid: [[0.; 100]; 100],
+        };
         let (expr, _) = formula("=1+2*10-2").unwrap();
-        assert_eq!(eval(expr), 19.);
+        assert_eq!(eval(&ss, expr), 19.);
         let (expr, _) = formula("=1+-(1+2*10)").unwrap();
-        assert_eq!(eval(expr), -20.);
+        assert_eq!(eval(&ss, expr), -20.);
+    }
+
+    #[test]
+    fn formula_with_ref() {
+        let mut ss = Spreadsheet {
+            grid: [[0.; 100]; 100],
+        };
+        ss.grid[0][0] = 10.;
+        ss.grid[1][1] = 30.;
+        let (expr, _) = formula("=[0,0]*[1,1]").unwrap();
+        assert_eq!(eval(&ss, expr), 300.);
     }
 }
