@@ -15,6 +15,7 @@ Reference ::= '[' Number ',' Number ']'
 Number ::= Digit+
 */
 
+#[derive(Clone)]
 enum ExprTree {
     Empty,
     Val(Value),
@@ -22,32 +23,53 @@ enum ExprTree {
     Binary(Box<BinaryNode>),
 }
 
+#[derive(Clone)]
 struct UnaryNode {
     op: UnaryOp,
     child: ExprTree,
 }
 
+#[derive(Clone)]
 struct BinaryNode {
     op: BinaryOp,
     left: ExprTree,
     right: ExprTree,
 }
 
+#[derive(Clone)]
 enum Value {
     Num(f64),
     Ref(usize, usize),
 }
 
 struct Spreadsheet {
-    grid: [[f64; 100]; 100],
+    grid: Vec<Vec<Cell>>,
 }
 
+#[derive(Clone)]
 struct Cell {
     raw: String,
+    expr: ExprTree,
     out: f64,
 }
 
-#[derive(Debug, PartialEq)]
+impl Default for Cell {
+    fn default() -> Self {
+        Cell {
+            raw: "".to_string(),
+            expr: ExprTree::Empty,
+            out: 0.,
+        }
+    }
+}
+
+impl Cell {
+    fn new() -> Cell {
+        Default::default()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 enum UnaryOp {
     Not,
 }
@@ -60,7 +82,7 @@ impl UnaryOp {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 enum BinaryOp {
     Sum,
     Sub,
@@ -80,6 +102,11 @@ impl BinaryOp {
 }
 
 impl Spreadsheet {
+    fn new() -> Spreadsheet {
+        // TODO(adelavega): Does derive clone do a deep copy of the box values?
+        let grid = vec![];
+        Spreadsheet { grid }
+    }
     fn set(&mut self, row: usize, col: usize, raw: String) -> Result<(), &str> {
         if self.grid.len() <= row || self.grid[0].len() <= col {
             return Err("out of bounds");
@@ -89,9 +116,6 @@ impl Spreadsheet {
         // cell.raw = raw;
         // Ok(())
     }
-
-    // TODO: Lets move parsing code into the spreadsheet implementation to have
-    // access to mut self. This way we can set references as we are parsing.
 }
 
 type ParseResult<'a, Output> = Result<(Output, &'a str), &'a str>;
@@ -213,7 +237,7 @@ fn eval(ss: &Spreadsheet, tree: ExprTree) -> f64 {
     match tree {
         ExprTree::Val(val) => match val {
             Value::Num(n) => n,
-            Value::Ref(i, j) => ss.grid[i][j],
+            Value::Ref(i, j) => ss.grid[i][j].out,
         },
         ExprTree::Unary(u) => u.op.apply(eval(ss, u.child)),
         ExprTree::Binary(b) => b.op.apply(eval(ss, b.left), eval(ss, b.right)),
@@ -344,9 +368,7 @@ mod tests {
 
     #[test]
     fn formula_with_numbers() {
-        let ss = Spreadsheet {
-            grid: [[0.; 100]; 100],
-        };
+        let ss = Spreadsheet { grid: vec![] };
         let (expr, _) = formula("=1+2*10-2").unwrap();
         assert_eq!(eval(&ss, expr), 19.);
         let (expr, _) = formula("=1+-(1+2*10)").unwrap();
@@ -356,10 +378,10 @@ mod tests {
     #[test]
     fn formula_with_ref() {
         let mut ss = Spreadsheet {
-            grid: [[0.; 100]; 100],
+            grid: vec![vec![Cell::new(); 2]; 2],
         };
-        ss.grid[0][0] = 10.;
-        ss.grid[1][1] = 30.;
+        ss.grid[0][0].out = 10.;
+        ss.grid[1][1].out = 30.;
         let (expr, _) = formula("=[0,0]*[1,1]").unwrap();
         assert_eq!(eval(&ss, expr), 300.);
     }
