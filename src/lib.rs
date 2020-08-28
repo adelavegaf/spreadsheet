@@ -9,7 +9,7 @@ Expr ::= Term ('+' Term | '-' Term)*
 Term ::= Factor ('*' Factor | '/' Factor)*
 Factor ::= ['-'] (Value | '(' Expr ')')
 Value ::= Function | Reference | Number
-Formula ::= FnId '(' Range ')'
+Function ::= FnId '(' Range ')'
 Range ::= Reference '->' Reference
 Reference ::= '[' Number ',' Number ']'
 Number ::= Digit+
@@ -102,23 +102,54 @@ impl BinaryOp {
 }
 
 impl Spreadsheet {
-    fn new() -> Spreadsheet {
+    pub fn new() -> Spreadsheet {
         // TODO(adelavega): Does derive clone do a deep copy of the box values?
-        let grid = vec![];
-        Spreadsheet { grid }
-    }
-    fn set(&mut self, row: usize, col: usize, raw: String) -> Result<(), &str> {
-        if self.grid.len() <= row || self.grid[0].len() <= col {
-            return Err("out of bounds");
+        Spreadsheet {
+            grid: vec![vec![Cell::new(); 100]; 100],
         }
-        todo!()
-        // let cell = &mut self.grid[row][col];
-        // cell.raw = raw;
-        // Ok(())
+    }
+    pub fn set(&mut self, row: usize, col: usize, raw: &str) -> Result<&Cell, &str> {
+        if self.grid[0].len() <= col {
+            self.resize_cols(col * 2);
+        }
+        if self.grid.len() <= row {
+            self.resize_rows(row * 2);
+        }
+
+        let (expr, _) = cell(raw)?;
+        let out = eval(self, &expr);
+        let c = &mut self.grid[row][col];
+        c.raw = raw.to_string();
+        c.expr = expr;
+        c.out = out;
+        Ok(c)
+    }
+
+    fn resize_rows(&mut self, new_len: usize) {
+        self.grid
+            .resize(new_len, vec![Cell::new(); self.grid[0].len()]);
+    }
+
+    fn resize_cols(&mut self, new_len: usize) {
+        for row in &mut self.grid {
+            row.resize(new_len, Cell::new());
+        }
     }
 }
 
-type ParseResult<'a, Output> = Result<(Output, &'a str), &'a str>;
+fn eval(ss: &Spreadsheet, tree: &ExprTree) -> f64 {
+    match tree {
+        ExprTree::Val(val) => match val {
+            Value::Num(n) => *n,
+            Value::Ref(i, j) => ss.grid[*i][*j].out,
+        },
+        ExprTree::Unary(u) => u.op.apply(eval(ss, &u.child)),
+        ExprTree::Binary(b) => b.op.apply(eval(ss, &b.left), eval(ss, &b.right)),
+        ExprTree::Empty => panic!("Found empty tree node"),
+    }
+}
+
+type ParseResult<'a, Output> = Result<(Output, &'a str), &'static str>;
 
 trait Parser<'a, T> {
     fn parse(&self, input: &'a str) -> ParseResult<'a, T>;
@@ -135,7 +166,19 @@ where
 
 // Spreadsheet Parsers
 
+fn cell(input: &str) -> ParseResult<ExprTree> {
+    // Cell ::= Number | Formula
+    let num_node = map(number, |n| ExprTree::Val(Value::Num(n)));
+    let (tree, input) = either(num_node, formula).parse(input)?;
+    if !input.is_empty() {
+        Err("Expected input to be empty")
+    } else {
+        Ok((tree, input))
+    }
+}
+
 fn formula(input: &str) -> ParseResult<ExprTree> {
+    // Formula ::= “=“ Expr
     let (_, input) = literal("=").parse(input)?;
     let (res, input) = expr(input)?;
     if input.is_empty() {
@@ -231,18 +274,6 @@ fn reduce_trees(first: ExprTree, others: Vec<(BinaryOp, ExprTree)>) -> ExprTree 
     }
     node.left = first;
     ExprTree::Binary(Box::new(node))
-}
-
-fn eval(ss: &Spreadsheet, tree: ExprTree) -> f64 {
-    match tree {
-        ExprTree::Val(val) => match val {
-            Value::Num(n) => n,
-            Value::Ref(i, j) => ss.grid[i][j].out,
-        },
-        ExprTree::Unary(u) => u.op.apply(eval(ss, u.child)),
-        ExprTree::Binary(b) => b.op.apply(eval(ss, b.left), eval(ss, b.right)),
-        ExprTree::Empty => panic!("Found empty tree node"),
-    }
 }
 
 fn number(input: &str) -> ParseResult<f64> {
@@ -367,22 +398,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn formula_with_numbers() {
-        let ss = Spreadsheet { grid: vec![] };
-        let (expr, _) = formula("=1+2*10-2").unwrap();
-        assert_eq!(eval(&ss, expr), 19.);
-        let (expr, _) = formula("=1+-(1+2*10)").unwrap();
-        assert_eq!(eval(&ss, expr), -20.);
+    fn set_formula_with_numbers() {
+        let mut ss = Spreadsheet::new();
+        let c1 = ss.set(0, 0, "=1+2*10-2").unwrap();
+        assert_eq!(c1.out, 19.);
+
+        let c2 = ss.set(0, 1, "=1+-(1+2*10)").unwrap();
+        assert_eq!(c2.out, -20.);
     }
 
     #[test]
-    fn formula_with_ref() {
-        let mut ss = Spreadsheet {
-            grid: vec![vec![Cell::new(); 2]; 2],
-        };
-        ss.grid[0][0].out = 10.;
-        ss.grid[1][1].out = 30.;
-        let (expr, _) = formula("=[0,0]*[1,1]").unwrap();
-        assert_eq!(eval(&ss, expr), 300.);
+    fn set_formula_with_ref() {
+        let mut ss = Spreadsheet::new();
+        ss.set(0, 0, "1").unwrap();
+        ss.set(0, 1, "2").unwrap();
+        ss.set(1, 0, "3").unwrap();
+        ss.set(1, 1, "4").unwrap();
+        let c = ss.set(2, 2, "=[0,0]+[0,1]+[1,0]+[1,1]").unwrap();
+        assert_eq!(c.out, 10.);
     }
 }
