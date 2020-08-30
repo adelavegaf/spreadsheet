@@ -16,12 +16,8 @@ struct Ref {
     col: usize,
 }
 
-struct Spreadsheet {
-    grid: Vec<Vec<Cell>>,
-}
-
 #[derive(Clone)]
-struct Cell {
+pub struct Cell {
     raw: String,
     expr: ExprTree,
     out: f64,
@@ -47,13 +43,23 @@ impl Cell {
     }
 }
 
-impl Spreadsheet {
-    pub fn new() -> Spreadsheet {
-        // TODO(adelavega): Does derive clone do a deep copy of the box values?
+pub struct Spreadsheet {
+    grid: Vec<Vec<Cell>>,
+}
+
+impl Default for Spreadsheet {
+    fn default() -> Self {
         Spreadsheet {
             grid: vec![vec![Cell::new(); 100]; 100],
         }
     }
+}
+
+impl Spreadsheet {
+    pub fn new() -> Spreadsheet {
+        Default::default()
+    }
+
     pub fn set(&mut self, row: usize, col: usize, raw: &str) -> Result<&Cell, &str> {
         if self.grid[0].len() <= col {
             self.resize_cols(col * 2);
