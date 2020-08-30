@@ -20,7 +20,6 @@ TODO:
 - Rename Ref to something else since there's a ref primitive in rust. CellRef?
 - Test for parsers
 - Test for combinators
-- Make eval only calculate numbers, have separate method to return outbound refs.
 */
 use std::collections::HashSet;
 use std::mem;
@@ -150,7 +149,8 @@ impl Spreadsheet {
 
         // Create new cell
         let (expr, _) = cell(raw)?;
-        let (out, outbound_refs) = eval(self, &expr);
+        let out = eval(self, &expr);
+        let outbound_refs = outbound(&expr);
         let inbound_refs = old_cell.inbound_refs.clone();
         let new_cell = Cell {
             raw: raw.to_string(),
@@ -173,7 +173,7 @@ impl Spreadsheet {
         // order we should re-eval our dependencies.
         let eval_order = self.toposort_inbound(cur_ref);
         for r in eval_order {
-            let (new_out, _) = eval(self, &self.grid[r.row][r.col].expr);
+            let new_out = eval(self, &self.grid[r.row][r.col].expr);
             self.grid[r.row][r.col].out = new_out;
         }
 
@@ -204,15 +204,15 @@ impl Spreadsheet {
     }
 
     fn has_cycle(&self, start: Ref) -> bool {
-        self.recursive_has_cycle(start, &mut HashSet::new())
+        self._has_cycle(start, &mut HashSet::new())
     }
 
-    fn recursive_has_cycle(&self, start: Ref, visited: &mut HashSet<Ref>) -> bool {
+    fn _has_cycle(&self, start: Ref, visited: &mut HashSet<Ref>) -> bool {
         if !visited.insert(start) {
             return true;
         }
         for r in self.grid[start.row][start.col].outbound_refs.iter() {
-            if self.recursive_has_cycle(*r, visited) {
+            if self._has_cycle(*r, visited) {
                 return true;
             }
         }
@@ -221,45 +221,45 @@ impl Spreadsheet {
 
     fn toposort_inbound(&self, start: Ref) -> Vec<Ref> {
         let mut sorted = vec![];
-        self.recursive_toposort_inbound(start, &mut sorted);
+        self._toposort_inbound(start, &mut sorted);
         sorted
     }
 
-    fn recursive_toposort_inbound(&self, start: Ref, result: &mut Vec<Ref>) {
+    fn _toposort_inbound(&self, start: Ref, result: &mut Vec<Ref>) {
         result.push(start);
         for r in self.grid[start.row][start.col].inbound_refs.iter() {
-            self.recursive_toposort_inbound(*r, result);
+            self._toposort_inbound(*r, result);
         }
     }
 }
 
-// TODO(adelavega): not a fan of returning both things here
-// Make eval only calculate a number, and bite the performance cost
-// and find references in separate method.
-fn eval(ss: &Spreadsheet, tree: &ExprTree) -> (f64, HashSet<Ref>) {
-    let mut refs = HashSet::new();
-    let out = recursive_eval(ss, tree, &mut refs);
-    (out, refs)
+fn eval(ss: &Spreadsheet, tree: &ExprTree) -> f64 {
+    match tree {
+        ExprTree::Val(Value::Num(n)) => *n,
+        ExprTree::Val(Value::Ref(row, col)) => ss.grid[*row][*col].out,
+        ExprTree::Unary(u) => u.op.apply(eval(ss, &u.child)),
+        ExprTree::Binary(b) => b.op.apply(eval(ss, &b.left), eval(ss, &b.right)),
+        ExprTree::Empty => panic!("Found empty tree node"),
+    }
 }
 
-fn recursive_eval(ss: &Spreadsheet, tree: &ExprTree, refs: &mut HashSet<Ref>) -> f64 {
+fn outbound(tree: &ExprTree) -> HashSet<Ref> {
     match tree {
-        ExprTree::Val(val) => match val {
-            Value::Num(n) => *n,
-            Value::Ref(row, col) => {
-                refs.insert(Ref {
-                    row: *row,
-                    col: *col,
-                });
-                // TODO: this might be out of bounds. Better to call a method to get?
-                ss.grid[*row][*col].out
-            }
-        },
-        ExprTree::Unary(u) => u.op.apply(recursive_eval(ss, &u.child, refs)),
-        ExprTree::Binary(b) => b.op.apply(
-            recursive_eval(ss, &b.left, refs),
-            recursive_eval(ss, &b.right, refs),
-        ),
+        ExprTree::Val(Value::Num(_)) => HashSet::new(),
+        ExprTree::Val(Value::Ref(row, col)) => [Ref {
+            row: *row,
+            col: *col,
+        }]
+        .iter()
+        .copied()
+        .collect(),
+        ExprTree::Unary(u) => outbound(&u.child),
+        ExprTree::Binary(b) => {
+            let mut left = outbound(&b.left);
+            let right = outbound(&b.right);
+            left.extend(right);
+            left
+        }
         ExprTree::Empty => panic!("Found empty tree node"),
     }
 }
