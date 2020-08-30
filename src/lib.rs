@@ -1,7 +1,6 @@
 /*
 TODO:
 - Improve error handling while parsing. Ideally, we would get "unexpected token in line x col y, found: w expected z"
-- Rename Ref to something else since there's a ref primitive in rust. CellRef?
 - Test for parsers
 - Test for combinators
 */
@@ -11,7 +10,7 @@ use std::collections::HashSet;
 use std::mem;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-struct Ref {
+struct Coord {
     row: usize,
     col: usize,
 }
@@ -21,8 +20,8 @@ pub struct Cell {
     raw: String,
     expr: ExprTree,
     out: f64,
-    outbound_refs: HashSet<Ref>,
-    inbound_refs: HashSet<Ref>,
+    outbound: HashSet<Coord>,
+    inbound: HashSet<Coord>,
 }
 
 impl Default for Cell {
@@ -31,8 +30,8 @@ impl Default for Cell {
             raw: "".to_string(),
             expr: ExprTree::Empty,
             out: 0.,
-            outbound_refs: HashSet::new(),
-            inbound_refs: HashSet::new(),
+            outbound: HashSet::new(),
+            inbound: HashSet::new(),
         }
     }
 }
@@ -68,37 +67,37 @@ impl Spreadsheet {
             self.resize_rows(row * 2);
         }
 
-        let cur_ref = Ref { row, col };
+        let cur_coord = Coord { row, col };
 
         // Replace old cell with a placeholder to deal with expired inbound references
         let old_cell = mem::replace(&mut self.grid[row][col], Cell::new());
-        self.rm_from_inbound(cur_ref, &old_cell.outbound_refs);
+        self.rm_from_inbound(cur_coord, &old_cell.outbound);
 
         // Create new cell
         let (expr, _) = cell(raw)?;
         let out = eval(self, &expr);
-        let outbound_refs = outbound(&expr);
-        let inbound_refs = old_cell.inbound_refs.clone();
+        let outbound = outbound(&expr);
+        let inbound = old_cell.inbound.clone();
         let new_cell = Cell {
             raw: raw.to_string(),
             expr,
             out,
-            outbound_refs,
-            inbound_refs,
+            outbound,
+            inbound,
         };
 
         // Replace placeholder with new cell and add new inbound references
-        self.add_to_inbound(cur_ref, &new_cell.outbound_refs);
+        self.add_to_inbound(cur_coord, &new_cell.outbound);
         self.grid[row][col] = new_cell;
 
-        if self.has_cycle(cur_ref) {
+        if self.has_cycle(cur_coord) {
             self.grid[row][col] = old_cell;
             return Err("This cell introduces a cycle!");
         }
 
         // Our references form a DAG, we can toposort it to have the correct
         // order we should re-eval our dependencies.
-        let eval_order = self.toposort_inbound(cur_ref);
+        let eval_order = self.toposort_inbound(cur_coord);
         for r in eval_order {
             let new_out = eval(self, &self.grid[r.row][r.col].expr);
             self.grid[r.row][r.col].out = new_out;
@@ -118,27 +117,27 @@ impl Spreadsheet {
         }
     }
 
-    fn rm_from_inbound(&mut self, r: Ref, targets: &HashSet<Ref>) {
+    fn rm_from_inbound(&mut self, c: Coord, targets: &HashSet<Coord>) {
         for t in targets.iter() {
-            self.grid[t.row][t.col].inbound_refs.remove(&r);
+            self.grid[t.row][t.col].inbound.remove(&c);
         }
     }
 
-    fn add_to_inbound(&mut self, r: Ref, targets: &HashSet<Ref>) {
+    fn add_to_inbound(&mut self, c: Coord, targets: &HashSet<Coord>) {
         for t in targets.iter() {
-            self.grid[t.row][t.col].inbound_refs.insert(r);
+            self.grid[t.row][t.col].inbound.insert(c);
         }
     }
 
-    fn has_cycle(&self, start: Ref) -> bool {
+    fn has_cycle(&self, start: Coord) -> bool {
         self._has_cycle(start, &mut HashSet::new())
     }
 
-    fn _has_cycle(&self, start: Ref, visited: &mut HashSet<Ref>) -> bool {
+    fn _has_cycle(&self, start: Coord, visited: &mut HashSet<Coord>) -> bool {
         if !visited.insert(start) {
             return true;
         }
-        for r in self.grid[start.row][start.col].outbound_refs.iter() {
+        for r in self.grid[start.row][start.col].outbound.iter() {
             if self._has_cycle(*r, visited) {
                 return true;
             }
@@ -146,15 +145,15 @@ impl Spreadsheet {
         false
     }
 
-    fn toposort_inbound(&self, start: Ref) -> Vec<Ref> {
+    fn toposort_inbound(&self, start: Coord) -> Vec<Coord> {
         let mut sorted = vec![];
         self._toposort_inbound(start, &mut sorted);
         sorted
     }
 
-    fn _toposort_inbound(&self, start: Ref, result: &mut Vec<Ref>) {
+    fn _toposort_inbound(&self, start: Coord, result: &mut Vec<Coord>) {
         result.push(start);
-        for r in self.grid[start.row][start.col].inbound_refs.iter() {
+        for r in self.grid[start.row][start.col].inbound.iter() {
             self._toposort_inbound(*r, result);
         }
     }
@@ -163,17 +162,17 @@ impl Spreadsheet {
 fn eval(ss: &Spreadsheet, tree: &ExprTree) -> f64 {
     match tree {
         ExprTree::Leaf(ValueNode::Num(n)) => *n,
-        ExprTree::Leaf(ValueNode::Ref(row, col)) => ss.grid[*row][*col].out,
+        ExprTree::Leaf(ValueNode::Coord(row, col)) => ss.grid[*row][*col].out,
         ExprTree::Unary(u) => u.op.apply(eval(ss, &u.child)),
         ExprTree::Binary(b) => b.op.apply(eval(ss, &b.left), eval(ss, &b.right)),
         ExprTree::Empty => panic!("Found empty tree node"),
     }
 }
 
-fn outbound(tree: &ExprTree) -> HashSet<Ref> {
+fn outbound(tree: &ExprTree) -> HashSet<Coord> {
     match tree {
         ExprTree::Leaf(ValueNode::Num(_)) => HashSet::new(),
-        ExprTree::Leaf(ValueNode::Ref(row, col)) => [Ref {
+        ExprTree::Leaf(ValueNode::Coord(row, col)) => [Coord {
             row: *row,
             col: *col,
         }]
@@ -247,18 +246,18 @@ mod tests {
 
         ss.set(0, 0, "1").unwrap();
         assert_eq!(
-            ss.grid[0][0].inbound_refs,
-            vec![Ref { row: 1, col: 1 }].into_iter().collect()
+            ss.grid[0][0].inbound,
+            vec![Coord { row: 1, col: 1 }].into_iter().collect()
         );
-        assert_eq!(ss.grid[0][0].outbound_refs, HashSet::new());
+        assert_eq!(ss.grid[0][0].outbound, HashSet::new());
 
-        assert_eq!(ss.grid[0][1].inbound_refs, HashSet::new());
-        assert_eq!(ss.grid[0][1].outbound_refs, HashSet::new());
+        assert_eq!(ss.grid[0][1].inbound, HashSet::new());
+        assert_eq!(ss.grid[0][1].outbound, HashSet::new());
 
-        assert_eq!(ss.grid[1][1].inbound_refs, HashSet::new());
+        assert_eq!(ss.grid[1][1].inbound, HashSet::new());
         assert_eq!(
-            ss.grid[1][1].outbound_refs,
-            vec![Ref { row: 0, col: 0 }].into_iter().collect()
+            ss.grid[1][1].outbound,
+            vec![Coord { row: 0, col: 0 }].into_iter().collect()
         );
     }
 }

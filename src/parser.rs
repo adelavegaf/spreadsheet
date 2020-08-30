@@ -6,10 +6,10 @@ Formula ::= “=“ Expr
 Expr ::= Term ('+' Term | '-' Term)*
 Term ::= Factor ('*' Factor | '/' Factor)*
 Factor ::= ['-'] (Value | '(' Expr ')')
-Value ::= Function | Reference | Number
+Value ::= Function | Coordinate | Number
 Function ::= FnId '(' Range ')'
-Range ::= Reference '->' Reference
-Reference ::= '[' Number ',' Number ']'
+Range ::= Coordinate '->' Coordinate
+Coordinate ::= '[' Number ',' Number ']'
 Number ::= Digit+
 */
 type ParseResult<'a, Output> = Result<(Output, &'a str), &'static str>;
@@ -30,9 +30,6 @@ where
 #[derive(Clone)]
 pub enum ExprTree {
   Empty,
-  // TODO: read about enum and structs and how to properly combine both
-  // Is it ok to have an enum value have the same name as the struct it refers
-  // to?
   Leaf(ValueNode),
   Unary(Box<UnaryNode>),
   Binary(Box<BinaryNode>),
@@ -41,10 +38,7 @@ pub enum ExprTree {
 #[derive(Clone, Copy)]
 pub enum ValueNode {
   Num(f64),
-  // TODO: read about enum and structs and how to properly combine both
-  // Is it ok to have an enum value have the same name as the struct it refers
-  // to?
-  Ref(usize, usize),
+  Coord(usize, usize),
 }
 
 #[derive(Clone)]
@@ -162,22 +156,22 @@ fn factor(mut input: &str) -> ParseResult<ExprTree> {
 }
 
 fn value(input: &str) -> ParseResult<ExprTree> {
-  // Value ::= Reference | Function | Number
+  // Value ::= Coord | Function | Number
   let num_val = map(number, ValueNode::Num);
-  let num_or_ref = either(num_val, reference);
-  let (val, input) = num_or_ref.parse(input)?;
+  let num_or_coord = either(num_val, coord);
+  let (val, input) = num_or_coord.parse(input)?;
   Ok((ExprTree::Leaf(val), input))
 }
 
-fn reference(input: &str) -> ParseResult<ValueNode> {
-  // Reference ::= '[' Number ',' Number ']'
+fn coord(input: &str) -> ParseResult<ValueNode> {
+  // Coordinate ::= '[' Number ',' Number ']'
   let (_, input) = literal("[").parse(input)?;
-  // TODO(adelavega): We should a float, and int parser, and use int here.
+  // TODO(adelavega): We should have a float, and int parser, and use int here.
   let (row, input) = number(input)?;
   let (_, input) = literal(",").parse(input)?;
   let (col, input) = number(input)?;
   let (_, input) = literal("]").parse(input)?;
-  Ok((ValueNode::Ref(row as usize, col as usize), input))
+  Ok((ValueNode::Coord(row as usize, col as usize), input))
 }
 
 fn reduce_trees(first: ExprTree, others: Vec<(BinaryOp, ExprTree)>) -> ExprTree {
