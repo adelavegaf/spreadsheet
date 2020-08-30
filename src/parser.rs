@@ -11,6 +11,10 @@ Function ::= FnId '(' Range ')'
 Range ::= Coordinate '->' Coordinate
 Coordinate ::= '[' Number ',' Number ']'
 Number ::= Digit+
+
+TODO:
+- Improve error handling while parsing. Ideally, we would get "unexpected token in line x col y, found: w expected z"
+- Test for parsers
 */
 type ParseResult<'a, Output> = Result<(Output, &'a str), &'static str>;
 
@@ -311,6 +315,84 @@ fn literal<'a>(pattern: &'static str) -> impl Parser<'a, ()> {
       Ok(((), &input[pattern.len()..]))
     } else {
       Err("no match")
+    }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  mod combinators {
+    use super::super::*;
+    #[test]
+    fn literal_smoketest() {
+      let p = literal("a");
+      assert_eq!(p.parse("alpha"), Ok(((), "lpha")));
+      assert!(p.parse("this wont match").is_err());
+    }
+
+    #[test]
+    fn pair_smoketest() {
+      let p = pair(literal("a"), literal("l"));
+
+      assert_eq!(p.parse("alpha"), Ok((((), ()), "pha")));
+      assert!(p.parse("a not followed by l").is_err());
+    }
+
+    #[test]
+    fn predicate_smoketest() {
+      let p = predicate(any_char, |c| *c == 'a');
+
+      assert_eq!(p.parse("alpha"), Ok(('a', "lpha")));
+      assert!(p.parse("beta").is_err());
+    }
+
+    #[test]
+    fn map_smoketest() {
+      let p = map(any_char, |c| c.is_numeric());
+
+      assert_eq!(p.parse("alpha"), Ok((false, "lpha")));
+      assert_eq!(p.parse("123"), Ok((true, "23")));
+    }
+
+    #[test]
+    fn zero_or_more_smoketest() {
+      let p = zero_or_more(literal("a"));
+
+      assert_eq!(p.parse("bcd"), Ok((vec![], "bcd")));
+      assert_eq!(p.parse("aaabcd"), Ok((vec![(), (), ()], "bcd")));
+    }
+
+    #[test]
+    fn one_or_more_smoketest() {
+      let p = one_or_more(literal("a"));
+
+      assert!(p.parse("bcd").is_err());
+      assert_eq!(p.parse("aaabcd"), Ok((vec![(), (), ()], "bcd")));
+    }
+
+    #[test]
+    fn either_smoketest() {
+      let p = either(literal("a"), literal("b"));
+
+      assert!(p.parse("cd").is_err());
+      assert_eq!(p.parse("abcd"), Ok(((), "bcd")));
+      assert_eq!(p.parse("bcd"), Ok(((), "cd")));
+    }
+
+    #[test]
+    fn left_smoketest() {
+      let p = left(any_char, literal("b"));
+
+      assert!(p.parse("bcd").is_err());
+      assert_eq!(p.parse("abc"), Ok(('a', "c")));
+    }
+
+    #[test]
+    fn right_smoketest() {
+      let p = right(any_char, literal("b"));
+
+      assert!(p.parse("bcd").is_err());
+      assert_eq!(p.parse("abc"), Ok(((), "c")));
     }
   }
 }

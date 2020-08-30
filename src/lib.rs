@@ -1,9 +1,3 @@
-/*
-TODO:
-- Improve error handling while parsing. Ideally, we would get "unexpected token in line x col y, found: w expected z"
-- Test for parsers
-- Test for combinators
-*/
 mod parser;
 use parser::{cell, ExprTree, ValueNode};
 use std::collections::HashSet;
