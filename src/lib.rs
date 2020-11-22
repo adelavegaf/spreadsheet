@@ -2,6 +2,13 @@ mod parser;
 use parser::{cell, ExprTree, ValueNode};
 use std::collections::HashSet;
 use std::mem;
+use wasm_bindgen::prelude::*;
+
+// When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
+// allocator.
+#[cfg(feature = "wee_alloc")]
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 struct Coord {
@@ -9,6 +16,7 @@ struct Coord {
     col: usize,
 }
 
+#[wasm_bindgen]
 #[derive(Clone)]
 pub struct Cell {
     raw: String,
@@ -30,12 +38,22 @@ impl Default for Cell {
     }
 }
 
+#[wasm_bindgen]
 impl Cell {
     fn new() -> Cell {
         Default::default()
     }
+
+    pub fn out(&self) -> f64 {
+        self.out
+    }
+
+    pub fn raw(&self) -> JsValue {
+        JsValue::from(&self.raw)
+    }
 }
 
+#[wasm_bindgen]
 pub struct Spreadsheet {
     grid: Vec<Vec<Cell>>,
 }
@@ -48,12 +66,13 @@ impl Default for Spreadsheet {
     }
 }
 
+#[wasm_bindgen]
 impl Spreadsheet {
     pub fn new() -> Spreadsheet {
         Default::default()
     }
 
-    pub fn set(&mut self, row: usize, col: usize, raw: &str) -> Result<&Cell, &str> {
+    pub fn set(&mut self, row: usize, col: usize, raw: &str) -> Result<(), JsValue> {
         if self.grid[0].len() <= col {
             self.resize_cols(col * 2);
         }
@@ -86,7 +105,7 @@ impl Spreadsheet {
 
         if self.has_cycle(cur_coord) {
             self.grid[row][col] = old_cell;
-            return Err("This cell introduces a cycle!");
+            return Err(JsValue::from("This cell introduces a cycle!"));
         }
 
         // Our references form a DAG, we can toposort it to have the correct
@@ -97,7 +116,7 @@ impl Spreadsheet {
             self.grid[r.row][r.col].out = new_out;
         }
 
-        Ok(&self.grid[row][col])
+        Ok(())
     }
 
     fn resize_rows(&mut self, new_len: usize) {
@@ -153,6 +172,13 @@ impl Spreadsheet {
     }
 }
 
+// methods not exported through web assembly
+impl Spreadsheet {
+    pub fn grid(&self) -> &Vec<Vec<Cell>> {
+        &self.grid
+    }
+}
+
 fn eval(ss: &Spreadsheet, tree: &ExprTree) -> f64 {
     match tree {
         ExprTree::Leaf(ValueNode::Num(n)) => *n,
@@ -187,53 +213,8 @@ fn outbound(tree: &ExprTree) -> HashSet<Coord> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn set_evals_formula_with_numbers() {
-        let mut ss = Spreadsheet::new();
-        let c1 = ss.set(0, 0, "=1+2*10-2").unwrap();
-        assert_eq!(c1.out, 19.);
-
-        let c2 = ss.set(0, 1, "=1+-(1+2*10)").unwrap();
-        assert_eq!(c2.out, -20.);
-    }
-
-    #[test]
-    fn set_evals_formula_with_ref() {
-        let mut ss = Spreadsheet::new();
-        ss.set(0, 0, "1").unwrap();
-        ss.set(0, 1, "2").unwrap();
-        ss.set(1, 0, "3").unwrap();
-        ss.set(1, 1, "4").unwrap();
-        let c = ss.set(2, 2, "=[0,0]+[0,1]+[1,0]+[1,1]").unwrap();
-        assert_eq!(c.out, 10.);
-    }
-
-    #[test]
-    fn set_detects_ref_cycle() {
-        let mut ss = Spreadsheet::new();
-        ss.set(0, 0, "=[0,1]").unwrap();
-        ss.set(0, 1, "=[1,0]").unwrap();
-        assert!(ss.set(1, 0, "=[0,0]").is_err())
-    }
-
-    #[test]
-    fn set_evals_all_inbound() {
-        let mut ss = Spreadsheet::new();
-        ss.set(0, 0, "10").unwrap();
-        ss.set(0, 1, "=[0,0]*2").unwrap();
-        ss.set(1, 0, "=[0,0]*3").unwrap();
-        ss.set(1, 1, "=[1,0]*4").unwrap();
-
-        ss.set(0, 0, "1").unwrap();
-        assert_eq!(ss.grid[0][0].out, 1.);
-        assert_eq!(ss.grid[0][1].out, 2.);
-        assert_eq!(ss.grid[1][0].out, 3.);
-        assert_eq!(ss.grid[1][1].out, 12.);
-    }
-
-    #[test]
-    fn set_updates_inbound_outbound_refs() {
+    fn set_updates_inbound_and_outbound_refs() {
         let mut ss = Spreadsheet::new();
         ss.set(0, 0, "=[0,1]").unwrap();
         ss.set(1, 1, "=[0,0]").unwrap();
