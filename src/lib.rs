@@ -87,10 +87,16 @@ impl Spreadsheet {
 
     pub fn set(&mut self, row: usize, col: usize, raw: &str) -> Result<JsValue, JsValue> {
         if col >= self.width {
-            return Err(JsValue::from("column out of bounds"));
+            return Err(JsValue::from(format!(
+                "column out of bounds: {} >= {}",
+                col, self.width
+            )));
         }
         if row >= self.height {
-            return Err(JsValue::from("row out of bounds"));
+            return Err(JsValue::from(format!(
+                "row out of bounds: {} >= {}",
+                row, self.height
+            )));
         }
 
         let cur_idx = self.get_index(row, col);
@@ -123,7 +129,7 @@ impl Spreadsheet {
 
         if self.has_cycle(cur_idx) {
             self.cells[cur_idx] = old_cell;
-            return Err(JsValue::from("This cell introduces a cycle!"));
+            return Err(JsValue::from(format!("{} introduces a cycle!", raw)));
         }
 
         // Our references form a DAG, we can toposort it to have the correct
@@ -149,15 +155,15 @@ impl Spreadsheet {
     }
 
     fn has_cycle(&self, start: usize) -> bool {
-        self._has_cycle(start, &mut HashSet::new())
+        self._has_cycle(start, HashSet::new())
     }
 
-    fn _has_cycle(&self, start: usize, visited: &mut HashSet<usize>) -> bool {
+    fn _has_cycle(&self, start: usize, mut visited: HashSet<usize>) -> bool {
         if !visited.insert(start) {
             return true;
         }
         for r in self.cells[start].outbound.iter() {
-            if self._has_cycle(*r, visited) {
+            if self._has_cycle(*r, visited.clone()) {
                 return true;
             }
         }

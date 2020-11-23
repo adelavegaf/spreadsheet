@@ -44,6 +44,15 @@ fn set_detects_ref_cycle() {
 }
 
 #[wasm_bindgen_test]
+fn set_works_when_multiple_cells_ref_same_cell() {
+  let mut ss = Spreadsheet::new();
+  ss.set(0, 0, "1").unwrap();
+  ss.set(0, 1, "=[0,0]*10").unwrap();
+  ss.set(1, 1, "=[0,0]+[1,0]").unwrap();
+  assert_eq!(ss.get(1, 1).out(), 11.);
+}
+
+#[wasm_bindgen_test]
 fn set_evals_all_inbound() {
   let mut ss = Spreadsheet::new();
   ss.set(0, 0, "10").unwrap();
