@@ -1,6 +1,7 @@
 mod parser;
 use parser::{cell, ExprTree, ValueNode};
-use std::collections::HashSet;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::mem;
 use wasm_bindgen::prelude::*;
 
@@ -10,13 +11,15 @@ use wasm_bindgen::prelude::*;
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-#[wasm_bindgen]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Cell {
     raw: String,
-    expr: ExprTree,
     out: f64,
+    #[serde(skip)]
+    expr: ExprTree,
+    #[serde(skip)]
     outbound: HashSet<usize>,
+    #[serde(skip)]
     inbound: HashSet<usize>,
 }
 
@@ -32,7 +35,6 @@ impl Default for Cell {
     }
 }
 
-#[wasm_bindgen]
 impl Cell {
     fn new() -> Cell {
         Default::default()
@@ -40,10 +42,6 @@ impl Cell {
 
     pub fn out(&self) -> f64 {
         self.out
-    }
-
-    pub fn raw(&self) -> JsValue {
-        JsValue::from(&self.raw)
     }
 }
 
@@ -56,7 +54,7 @@ pub struct Spreadsheet {
 
 impl Default for Spreadsheet {
     fn default() -> Self {
-        let width = 100;
+        let width = 26;
         let height = 100;
         Spreadsheet {
             width,
@@ -72,7 +70,22 @@ impl Spreadsheet {
         Default::default()
     }
 
-    pub fn set(&mut self, row: usize, col: usize, raw: &str) -> Result<(), JsValue> {
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
+    pub fn cells(&self) -> Result<JsValue, JsValue> {
+        // This is expensive and should only be called to initialize the frontend.
+        let serialized_cells = JsValue::from_serde(&self.cells)
+            .map_err(|_| JsValue::from("could not serialize cells"))?;
+        Ok(serialized_cells)
+    }
+
+    pub fn set(&mut self, row: usize, col: usize, raw: &str) -> Result<JsValue, JsValue> {
         if col >= self.width {
             return Err(JsValue::from("column out of bounds"));
         }
@@ -116,15 +129,22 @@ impl Spreadsheet {
         // Our references form a DAG, we can toposort it to have the correct
         // order we should re-eval our dependencies.
         let eval_order = self.toposort_inbound(cur_idx);
-        for in_idx in eval_order {
-            let new_out = eval(self, &self.cells[in_idx].expr);
-            self.cells[in_idx].out = new_out;
+        for in_idx in &eval_order {
+            let new_out = eval(self, &self.cells[*in_idx].expr);
+            self.cells[*in_idx].out = new_out;
         }
 
-        Ok(())
+        // Serialize all cells that were modified for frontend to update.
+        let mut idx_to_cell = HashMap::new();
+        for in_idx in &eval_order {
+            idx_to_cell.insert(*in_idx, &self.cells[*in_idx]);
+        }
+        let res =
+            JsValue::from_serde(&idx_to_cell).map_err(|_| JsValue::from("could not serialize"))?;
+        Ok(res)
     }
 
-    fn get_index(&self, row: usize, col: usize) -> usize {
+    pub fn get_index(&self, row: usize, col: usize) -> usize {
         row * self.width + col
     }
 
@@ -188,32 +208,5 @@ fn fill_outbound(ss: &Spreadsheet, tree: &ExprTree, outbound: &mut HashSet<usize
             fill_outbound(ss, &b.right, outbound);
         }
         ExprTree::Empty => panic!("Found empty tree node"),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn set_updates_inbound_and_outbound_refs() {
-        let mut ss = Spreadsheet::new();
-        ss.set(0, 0, "=[0,1]").unwrap();
-        ss.set(1, 1, "=[0,0]").unwrap();
-
-        ss.set(0, 0, "1").unwrap();
-        assert_eq!(
-            ss.get(0, 0).inbound,
-            vec![ss.get_index(1, 1)].into_iter().collect()
-        );
-        assert_eq!(ss.get(0, 0).outbound, HashSet::new());
-
-        assert_eq!(ss.get(0, 1).inbound, HashSet::new());
-        assert_eq!(ss.get(0, 1).outbound, HashSet::new());
-
-        assert_eq!(ss.get(1, 1).inbound, HashSet::new());
-        assert_eq!(
-            ss.get(1, 1).outbound,
-            vec![ss.get_index(0, 0)].into_iter().collect()
-        );
     }
 }

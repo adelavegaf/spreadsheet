@@ -39,6 +39,12 @@ pub enum ExprTree {
   Binary(Box<BinaryNode>),
 }
 
+impl Default for ExprTree {
+  fn default() -> Self {
+    ExprTree::Empty
+  }
+}
+
 #[derive(Clone, Copy)]
 pub enum ValueNode {
   Num(f64),
@@ -171,9 +177,9 @@ fn coord(input: &str) -> ParseResult<ValueNode> {
   // Coordinate ::= '[' Number ',' Number ']'
   let (_, input) = literal("[").parse(input)?;
   // TODO(adelavega): We should have a float, and int parser, and use int here.
-  let (row, input) = number(input)?;
-  let (_, input) = literal(",").parse(input)?;
   let (col, input) = number(input)?;
+  let (_, input) = literal(",").parse(input)?;
+  let (row, input) = number(input)?;
   let (_, input) = literal("]").parse(input)?;
   Ok((ValueNode::Coord(row as usize, col as usize), input))
 }
