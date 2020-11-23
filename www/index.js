@@ -1,11 +1,9 @@
 import { Spreadsheet } from "spreadsheet";
 
 const ss = Spreadsheet.new();
+const cells = ss.cells();
 const width = ss.width();
 const height = ss.height();
-
-// We only need this during initialization
-const cells = ss.cells();
 
 const getIndex = (row, col) => {
   return row * width + col;
@@ -27,6 +25,14 @@ const updateCells = (updates) => {
     updateCell(idx, cell.raw, cell.out);
   }
 };
+
+const focusInput = (row, col) => {
+  row = Math.min(Math.max(row, 0), height - 1);
+  col = Math.min(Math.max(col, 0), width - 1);
+  const idx = getIndex(row, col);
+  const input = document.getElementById(`input-${idx}`);
+  input.focus();
+}
 
 // UI set up
 const tableEle = document.getElementById("table");
@@ -72,18 +78,24 @@ for (let i = 0; i < height; i++) {
     inputEle.addEventListener("blur", (event) => {
       inputEle.value = cell.out;
     });
-    inputEle.addEventListener("keyup", (event) => {
+    inputEle.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         const updates = ss.set(i, j, inputEle.value);
         updateCells(updates);
-
-        const bottomCellIdx = getIndex(i+1, j);
-        const bottomInput = document.getElementById(`input-${bottomCellIdx}`);
-        bottomInput.focus();
+        focusInput(i+1, j);
       } else if (event.key === "Escape") {
         inputEle.value = cell.out;
+      } else if (event.key === "ArrowRight") {
+        focusInput(i, j+1);
+      } else if (event.key === "ArrowLeft") {
+        focusInput(i, j-1);
+      } else if (event.key === "ArrowUp") {
+        focusInput(i-1, j);
+      } else if (event.key === "ArrowDown") {
+        focusInput(i+1, j);
       }
     });
+    
     colEle.appendChild(inputEle);
   }
   tableEle.appendChild(rowEle);
