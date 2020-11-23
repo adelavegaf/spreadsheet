@@ -1,0 +1,27 @@
+body {
+  font-family: "Roboto", sans-serif;
+  margin: 0px;
+}
+
+.cell-header {
+  padding: 0px;
+  border-style: solid;
+  border-color: rgb(249, 249, 249);
+  border-width: 1px;
+  color: rgb(249, 249, 249);
+  background-color: rgb(57, 57, 57);
+  text-align: center;
+}
+
+.cell-input {
+  min-width: 48px;
+  width: 100%;
+  border-radius: 0px;
+  border-color: rgb(249, 249, 249);
+  border-width: 1px;
+  color: rgb(57, 57, 57);
+}
+
+.cell {
+  padding: 0px;
+}

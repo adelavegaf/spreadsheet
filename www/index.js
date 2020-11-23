@@ -30,8 +30,28 @@ const updateCells = (updates) => {
 
 // UI set up
 const tableEle = document.getElementById("table");
+const headerRowEle = document.createElement("tr");
+
+const paddingCol = document.createElement("td");
+paddingCol.className = "cell-header";
+headerRowEle.appendChild(paddingCol);
+
+for (let i = 0; i < width; i++) {
+  const colEle = document.createElement("td");
+  colEle.innerHTML = i;
+  colEle.className = "cell-header";
+  headerRowEle.appendChild(colEle);
+}
+tableEle.appendChild(headerRowEle);
+
 for (let i = 0; i < height; i++) {
   const rowEle = document.createElement("tr");
+  
+  const headerCol = document.createElement("td");
+  headerCol.className = "cell-header";
+  headerCol.innerHTML = i;
+  rowEle.appendChild(headerCol);
+
   for (let j = 0; j < width; j++) {
     const idx = getIndex(i, j);
     const cell = cells[idx];
@@ -39,10 +59,12 @@ for (let i = 0; i < height; i++) {
     const colEle = document.createElement("td");
     colEle.setAttribute("id", `cell-${idx}`);
     rowEle.appendChild(colEle);
+    colEle.className = "cell";
     
     const inputEle = document.createElement("input");
     inputEle.setAttribute("id", `input-${idx}`);
     inputEle.value = cell.out;
+    inputEle.className = "cell-input";
 
     inputEle.addEventListener("focus", (event) => {
       inputEle.value = cell.raw;
@@ -62,7 +84,6 @@ for (let i = 0; i < height; i++) {
         inputEle.value = cell.out;
       }
     });
-    
     colEle.appendChild(inputEle);
   }
   tableEle.appendChild(rowEle);
