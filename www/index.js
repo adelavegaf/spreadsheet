@@ -1,4 +1,3 @@
-import { memory } from "spreadsheet/spreadsheet_bg";
 import { Spreadsheet } from "spreadsheet";
 
 const ss = Spreadsheet.new();
@@ -13,10 +12,14 @@ const getIndex = (row, col) => {
 };
 
 const updateCell = (index, raw, out) => {
+  cells[index].raw = raw;
+  cells[index].out = out;
   const inputEle = document.getElementById(`input-${index}`);
-  inputEle.value = raw;
-  const outEle = document.getElementById(`out-${index}`);
-  outEle.innerHTML = out;
+  if (document.activeElement === inputEle) {
+    inputEle.value = raw;
+  } else {
+    inputEle.value = out;
+  }
 };
 
 const updateCells = (updates) => {
@@ -39,21 +42,28 @@ for (let i = 0; i < height; i++) {
     
     const inputEle = document.createElement("input");
     inputEle.setAttribute("id", `input-${idx}`);
-    inputEle.value = cell.raw;
-    colEle.appendChild(inputEle);
-    
-    const outEle = document.createElement("p");
-    outEle.setAttribute("id", `out-${idx}`);
-    outEle.innerHTML = cell.out;
-    colEle.appendChild(outEle);
+    inputEle.value = cell.out;
 
-    colEle.addEventListener("keypress", (event) => {
-      if (event.key != "Enter") {
-        return;
-      }
-      const updates = ss.set(i, j, inputEle.value);
-      updateCells(updates);
+    inputEle.addEventListener("focus", (event) => {
+      inputEle.value = cell.raw;
     });
+    inputEle.addEventListener("blur", (event) => {
+      inputEle.value = cell.out;
+    });
+    inputEle.addEventListener("keyup", (event) => {
+      if (event.key === "Enter") {
+        const updates = ss.set(i, j, inputEle.value);
+        updateCells(updates);
+
+        const bottomCellIdx = getIndex(i+1, j);
+        const bottomInput = document.getElementById(`input-${bottomCellIdx}`);
+        bottomInput.focus();
+      } else if (event.key === "Escape") {
+        inputEle.value = cell.out;
+      }
+    });
+    
+    colEle.appendChild(inputEle);
   }
   tableEle.appendChild(rowEle);
 }
