@@ -76,12 +76,14 @@ for (let i = 0; i < height; i++) {
       inputEle.value = cell.raw;
     });
     inputEle.addEventListener("blur", (event) => {
+      if (inputEle.value !== cell.raw) {
+        const updates = ss.set(i, j, inputEle.value);
+        updateCells(updates);
+      }
       inputEle.value = cell.out;
     });
     inputEle.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
-        const updates = ss.set(i, j, inputEle.value);
-        updateCells(updates);
         focusInput(i+1, j);
       } else if (event.key === "Escape") {
         inputEle.value = cell.out;
