@@ -8,20 +8,20 @@ body {
   border-style: solid;
   border-color: rgb(249, 249, 249);
   border-width: 1px;
-  color: rgb(249, 249, 249);
-  background-color: rgb(57, 57, 57);
+  color: rgb(84, 84, 84);
+  background-color: rgb(230, 230, 230);
   text-align: center;
 }
 
 .cell-input {
-  min-width: 48px;
-  width: 100%;
+  border-style: none;
   border-radius: 0px;
-  border-color: rgb(249, 249, 249);
-  border-width: 1px;
-  color: rgb(57, 57, 57);
+  color: rgb(65, 65, 65);
 }
 
 .cell {
   padding: 0px;
+  width: 100%;
+  border: 1px solid white;
+  box-shadow: 0 0 1px black;
 }

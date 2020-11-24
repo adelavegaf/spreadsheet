@@ -16,7 +16,7 @@ const updateCell = (index, raw, out) => {
   if (document.activeElement === inputEle) {
     inputEle.value = raw;
   } else {
-    inputEle.value = out;
+    inputEle.value = raw.length === 0 ? "" : out;
   }
 };
 
@@ -52,6 +52,7 @@ tableEle.appendChild(headerRowEle);
 
 for (let i = 0; i < height; i++) {
   const rowEle = document.createElement("tr");
+  tableEle.appendChild(rowEle);
   
   const headerCol = document.createElement("td");
   headerCol.className = "cell-header";
@@ -69,7 +70,6 @@ for (let i = 0; i < height; i++) {
     
     const inputEle = document.createElement("input");
     inputEle.setAttribute("id", `input-${idx}`);
-    inputEle.value = cell.out;
     inputEle.className = "cell-input";
 
     inputEle.addEventListener("focus", (event) => {
@@ -80,13 +80,12 @@ for (let i = 0; i < height; i++) {
         const updates = ss.set(i, j, inputEle.value);
         updateCells(updates);
       }
-      inputEle.value = cell.out;
     });
     inputEle.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         focusInput(i+1, j);
       } else if (event.key === "Escape") {
-        inputEle.value = cell.out;
+        // inputEle.value = cell.out;
       } else if (event.key === "ArrowRight") {
         focusInput(i, j+1);
       } else if (event.key === "ArrowLeft") {
@@ -97,10 +96,10 @@ for (let i = 0; i < height; i++) {
         focusInput(i+1, j);
       }
     });
-    
     colEle.appendChild(inputEle);
+
+    updateCell(idx, cell.raw, cell.out);
   }
-  tableEle.appendChild(rowEle);
 }
 
 
