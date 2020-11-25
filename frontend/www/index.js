@@ -9,15 +9,20 @@ const getIndex = (row, col) => {
   return row * width + col;
 };
 
-const updateCell = (index, raw, out) => {
-  cells[index].raw = raw;
-  cells[index].out = out;
-  const inputEle = document.getElementById(`input-${index}`);
+const setInputValue = (inputEle, cell) => {
   if (document.activeElement === inputEle) {
-    inputEle.value = raw;
+    inputEle.value = cell.raw;
   } else {
-    inputEle.value = raw.length === 0 ? "" : out;
+    inputEle.value = cell.raw.length === 0 ? "" : cell.out;
   }
+};
+
+const updateCell = (index, raw, out) => {
+  const cell = cells[index]
+  cell.raw = raw;
+  cell.out = out;
+  const inputEle = document.getElementById(`input-${index}`);
+  setInputValue(inputEle, cell);
 };
 
 const updateCells = (updates) => {
@@ -71,6 +76,7 @@ for (let i = 0; i < height; i++) {
     const inputEle = document.createElement("input");
     inputEle.setAttribute("id", `input-${idx}`);
     inputEle.className = "cell-input";
+    setInputValue(inputEle, cell);
 
     inputEle.addEventListener("focus", (event) => {
       inputEle.value = cell.raw;
@@ -79,13 +85,15 @@ for (let i = 0; i < height; i++) {
       if (inputEle.value !== cell.raw) {
         const updates = ss.set(i, j, inputEle.value);
         updateCells(updates);
+      } else {
+        setInputValue(inputEle, cell);
       }
     });
     inputEle.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         focusInput(i+1, j);
       } else if (event.key === "Escape") {
-        // inputEle.value = cell.out;
+        inputEle.value = cell.out;
       } else if (event.key === "ArrowRight") {
         focusInput(i, j+1);
       } else if (event.key === "ArrowLeft") {
@@ -96,9 +104,8 @@ for (let i = 0; i < height; i++) {
         focusInput(i+1, j);
       }
     });
-    colEle.appendChild(inputEle);
 
-    updateCell(idx, cell.raw, cell.out);
+    colEle.appendChild(inputEle);
   }
 }
 
