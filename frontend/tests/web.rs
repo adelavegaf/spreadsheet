@@ -31,24 +31,24 @@ fn set_evals_formula_with_ref() {
   ss.set(1, 1, "4").unwrap();
   let r1 = 2;
   let c1 = 2;
-  ss.set(r1, c1, "=[0,0]+[0,1]+[1,0]+[1,1]").unwrap();
+  ss.set(r1, c1, "=A1+A2+B1+B2").unwrap();
   assert_eq!(ss.get(r1, c1).out(), 10.);
 }
 
 #[wasm_bindgen_test]
 fn set_detects_ref_cycle() {
   let mut ss = Spreadsheet::new();
-  ss.set(0, 0, "=[0,1]").unwrap();
-  ss.set(1, 0, "=[1,0]").unwrap();
-  assert!(ss.set(0, 1, "=[0,0]").is_err())
+  ss.set(0, 0, "=A2").unwrap();
+  ss.set(1, 0, "=B1").unwrap();
+  assert!(ss.set(0, 1, "=A1").is_err())
 }
 
 #[wasm_bindgen_test]
 fn set_works_when_multiple_cells_ref_same_cell() {
   let mut ss = Spreadsheet::new();
   ss.set(0, 0, "1").unwrap();
-  ss.set(0, 1, "=[0,0]*10").unwrap();
-  ss.set(1, 1, "=[0,0]+[1,0]").unwrap();
+  ss.set(0, 1, "=A1*10").unwrap();
+  ss.set(1, 1, "=A1+B1").unwrap();
   assert_eq!(ss.get(1, 1).out(), 11.);
 }
 
@@ -56,9 +56,9 @@ fn set_works_when_multiple_cells_ref_same_cell() {
 fn set_evals_all_inbound() {
   let mut ss = Spreadsheet::new();
   ss.set(0, 0, "10").unwrap();
-  ss.set(0, 1, "=[0,0]*2").unwrap();
-  ss.set(1, 0, "=[0,0]*3").unwrap();
-  ss.set(1, 1, "=[0,1]*4").unwrap();
+  ss.set(0, 1, "=A1*2").unwrap();
+  ss.set(1, 0, "=A1*3").unwrap();
+  ss.set(1, 1, "=A2*4").unwrap();
 
   ss.set(0, 0, "1").unwrap();
   assert_eq!(ss.get(0, 0).out(), 1.);
@@ -71,9 +71,9 @@ fn set_evals_all_inbound() {
 fn set_returns_all_updated() {
   let mut ss = Spreadsheet::new();
   ss.set(0, 0, "10").unwrap();
-  ss.set(0, 1, "=[0,0]*2").unwrap();
-  ss.set(1, 0, "=[0,0]*3").unwrap();
-  ss.set(1, 1, "=[0,1]*4").unwrap();
+  ss.set(0, 1, "=A1*2").unwrap();
+  ss.set(1, 0, "=A1*3").unwrap();
+  ss.set(1, 1, "=A2*4").unwrap();
 
   let updates = ss.set(0, 0, "1").unwrap();
   let idx_to_cells: HashMap<usize, Cell> = JsValue::into_serde(&updates).unwrap();

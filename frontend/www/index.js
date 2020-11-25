@@ -39,6 +39,26 @@ const focusInput = (row, col) => {
   input.focus();
 }
 
+const colToLetters = (col) => {
+  const base = 26;
+  let remainders = [];
+
+  remainders.push(col % base);
+  let quotient = Math.floor(col / base);
+
+  while (quotient !== 0) {
+    remainders.push(quotient % base);
+    quotient = Math.floor(quotient / base);
+  }
+
+  const asciiOffset = "A".charCodeAt(0);
+  const asciiCode = remainders.map((n) => {
+    return asciiOffset + n;
+  }).reverse();
+
+  return String.fromCharCode(asciiCode);
+};
+
 // UI set up
 const tableEle = document.getElementById("table");
 const headerRowEle = document.createElement("tr");
@@ -49,7 +69,7 @@ headerRowEle.appendChild(paddingCol);
 
 for (let i = 0; i < width; i++) {
   const colEle = document.createElement("td");
-  colEle.innerHTML = i;
+  colEle.innerHTML = colToLetters(i);
   colEle.className = "cell-header";
   headerRowEle.appendChild(colEle);
 }

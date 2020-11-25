@@ -8,8 +8,9 @@ Term ::= Factor ('*' Factor | '/' Factor)*
 Factor ::= ['-'] (Value | '(' Expr ')')
 Value ::= Function | Coordinate | Number
 Function ::= FnId '(' Range ')'
-Range ::= Coordinate '->' Coordinate
-Coordinate ::= '[' Number ',' Number ']'
+Range ::= Coordinate ':' Coordinate
+Coordinate ::= Letters Number
+Letters ::= Letter+
 Number ::= Digit+
 
 TODO:
@@ -174,14 +175,34 @@ fn value(input: &str) -> ParseResult<ExprTree> {
 }
 
 fn coord(input: &str) -> ParseResult<ValueNode> {
-  // Coordinate ::= '[' Number ',' Number ']'
-  let (_, input) = literal("[").parse(input)?;
+  // Coordinate ::= Letters Number
+  let (ltrs, input) = letters(input)?;
+  let col = letters_to_col(&ltrs);
   // TODO(adelavega): We should have a float, and int parser, and use int here.
-  let (col, input) = number(input)?;
-  let (_, input) = literal(",").parse(input)?;
-  let (row, input) = number(input)?;
-  let (_, input) = literal("]").parse(input)?;
-  Ok((ValueNode::Coord(row as usize, col as usize), input))
+  let (num, input) = number(input)?;
+  // Convert to 0-based index before returning
+  let row = (num as usize) - 1;
+  Ok((ValueNode::Coord(row, col), input))
+}
+
+fn letters(input: &str) -> ParseResult<String> {
+  // Letters ::= Letter+
+  let (letters_vec, input) =
+    one_or_more(predicate(any_char, |c| c.is_ascii_alphabetic())).parse(input)?;
+  let ltrs = letters_vec.into_iter().collect::<String>();
+  Ok((ltrs, input))
+}
+
+fn letters_to_col(letters: &str) -> usize {
+  let start = b'a';
+  let mut col = 0;
+  let base: usize = 26;
+  for (i, c) in letters.to_lowercase().bytes().rev().enumerate() {
+    let num = (c - start + 1) as usize;
+    col += num * base.pow(i as u32);
+  }
+  // 0-indexed result
+  col - 1
 }
 
 fn reduce_trees(first: ExprTree, others: Vec<(BinaryOp, ExprTree)>) -> ExprTree {
@@ -327,6 +348,16 @@ fn literal<'a>(pattern: &'static str) -> impl Parser<'a, ()> {
 
 #[cfg(test)]
 mod tests {
+  mod parsers {
+    use super::super::*;
+    #[test]
+    fn letters_to_col_smoketest() {
+      assert_eq!(letters_to_col("A"), 0);
+      assert_eq!(letters_to_col("z"), 25);
+      assert_eq!(letters_to_col("Aa"), 26);
+      assert_eq!(letters_to_col("ba"), 52);
+    }
+  }
   mod combinators {
     use super::super::*;
     #[test]
