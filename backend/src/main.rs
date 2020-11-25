@@ -5,36 +5,86 @@ use actix_files as fs;
 use actix_web::{middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use actix_web_actors::ws;
 
+mod server;
+
 /// How often heartbeat pings are sent
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 /// How long before lack of client response causes a timeout
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// do websocket handshake and start `MyWebSocket` actor
-async fn ws_index(r: HttpRequest, stream: web::Payload) -> Result<HttpResponse, Error> {
+async fn ws_index(
+    r: HttpRequest,
+    stream: web::Payload,
+    srv: web::Data<Addr<server::WsServer>>,
+) -> Result<HttpResponse, Error> {
     println!("{:?}", r);
-    let res = ws::start(SpreadsheetServer::new(), &r, stream);
+    let res = ws::start(
+        WsSession {
+            id: 0,
+            hb: Instant::now(),
+            addr: srv.get_ref().clone(),
+        },
+        &r,
+        stream,
+    );
     println!("{:?}", res);
     res
 }
 
-struct SpreadsheetServer {
+struct WsSession {
+    id: usize,
     /// Client must send ping at least once per 10 seconds (CLIENT_TIMEOUT),
     /// otherwise we drop connection.
     hb: Instant,
+    // Spreadsheet server
+    addr: Addr<server::WsServer>,
 }
 
-impl Actor for SpreadsheetServer {
+impl Actor for WsSession {
     type Context = ws::WebsocketContext<Self>;
 
     /// Method is called on actor start. We start the heartbeat process here.
     fn started(&mut self, ctx: &mut Self::Context) {
         self.hb(ctx);
+
+        let spreadsheet_id = 1;
+        let addr = ctx.address().recipient();
+        self.addr
+            .send(server::Connect {
+                spreadsheet_id,
+                addr,
+            })
+            .into_actor(self)
+            .then(|res, act, ctx| {
+                match res {
+                    Ok(res) => act.id = res,
+                    _ => ctx.stop(),
+                }
+                fut::ready(())
+            })
+            .wait(ctx);
+    }
+
+    fn stopping(&mut self, _: &mut Self::Context) -> Running {
+        // notify chat server
+        self.addr.do_send(server::Disconnect {
+            session_id: self.id,
+        });
+        Running::Stop
+    }
+}
+
+impl Handler<server::Event> for WsSession {
+    type Result = ();
+
+    fn handle(&mut self, msg: server::Event, _: &mut Self::Context) {
+        ()
     }
 }
 
 /// Handler for `ws::Message`
-impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SpreadsheetServer {
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         // process websocket messages
         println!("WS: {:?}", msg);
@@ -57,14 +107,9 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SpreadsheetServer
     }
 }
 
-impl SpreadsheetServer {
-    fn new() -> Self {
-        Self { hb: Instant::now() }
-    }
-
-    /// helper method that sends ping to client every second.
-    ///
-    /// also this method checks heartbeats from client
+impl WsSession {
+    // helper method that sends ping to client every second.
+    // also this method checks heartbeats from client
     fn hb(&self, ctx: &mut <Self as Actor>::Context) {
         ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
             // check client heartbeats
@@ -89,8 +134,11 @@ async fn main() -> std::io::Result<()> {
     std::env::set_var("RUST_LOG", "actix_server=info,actix_web=info");
     env_logger::init();
 
-    HttpServer::new(|| {
+    let server = server::WsServer::default().start();
+
+    HttpServer::new(move || {
         App::new()
+            .data(server.clone())
             // enable logger
             .wrap(middleware::Logger::default())
             // websocket route
