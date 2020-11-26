@@ -1,7 +1,6 @@
 use std::time::{Duration, Instant};
 
 use actix::prelude::*;
-use actix_files as fs;
 use actix_web::{middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use actix_web_actors::ws;
 
@@ -75,9 +74,7 @@ impl Actor for WsSession {
 impl Handler<server::Event> for WsSession {
     type Result = ();
 
-    fn handle(&mut self, msg: server::Event, _: &mut Self::Context) {
-        ()
-    }
+    fn handle(&mut self, _msg: server::Event, _: &mut Self::Context) {}
 }
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
@@ -131,8 +128,6 @@ async fn main() -> std::io::Result<()> {
             .wrap(middleware::Logger::default())
             // websocket route
             .service(web::resource("/ws/").route(web::get().to(ws_index)))
-            // static files
-            .service(fs::Files::new("/", "static/").index_file("index.html"))
     })
     .bind("127.0.0.1:8888")?
     .run()
