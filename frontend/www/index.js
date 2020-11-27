@@ -6,6 +6,7 @@ const width = ss.width();
 const height = ss.height();
 
 // websocket stuff
+let participants = [];
 let conn = null;
 const connect = () => {
   // const wsUri = `${window.location.protocol === 'https:' ? 'wss://' : 'ws://'}${window.location.host}/ws/`;
@@ -18,7 +19,14 @@ const connect = () => {
   };
 
   conn.onmessage = (e) => {
-    console.log("received: ", e);
+    const event = JSON.parse(e.data);
+    switch (event.type) {
+      case "Participants":
+        participants = event.ids;
+        break;
+      default:
+        break;
+    }
   };
 
   conn.onclose = () => {
