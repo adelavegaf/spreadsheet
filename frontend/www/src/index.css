@@ -32,6 +32,22 @@ body {
   box-shadow: 0 0 1px black;
 }
 
+.online-status {
+  padding: 6px;
+  border-radius: 50%;
+  margin-right: 8px;
+  margin-left: 8px;
+  align-self: center;
+}
+
+.online {
+  background-color: rgb(115, 177, 22);
+}
+
+.offline {
+  background-color: rgb(206, 12, 12);
+}
+
 .participant-container {
   display: flex;
   flex-direction: row-reverse;

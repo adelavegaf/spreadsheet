@@ -8,6 +8,7 @@ const width = ss.width();
 const height = ss.height();
 
 const App = () => {
+  const [isOnline, setIsOnline] = useState(false);
   const [participants, setParticipants] = useState([]);
   const ws = useRef(null);
 
@@ -15,11 +16,10 @@ const App = () => {
     ws.current = new WebSocket("ws://localhost:8888/ws/");
 
     ws.current.onopen = () => {
-      console.log("connected");
+      setIsOnline(true);
     };
   
     ws.current.onmessage = (e) => {
-      console.log("message", e);
       const event = JSON.parse(e.data);
       switch (event.type) {
         case "Participants":
@@ -31,7 +31,7 @@ const App = () => {
     };
   
     ws.current.onclose = () => {
-      console.log("disconnected");
+      setIsOnline(false);
     };
 
     return () => {
@@ -41,15 +41,16 @@ const App = () => {
 
   return (
     <>
-      <Participants participants={participants}/>
+      <Participants participants={participants} isOnline={isOnline}/>
       <Table/>
     </>
   )
 };
 
-const Participants = ({participants}) => {
+const Participants = ({participants, isOnline}) => {
   return (
     <div className="participant-container">
+      <span className={isOnline ? "online-status online" : "online-status offline"}/>
       {participants.map(p => {
         return <span key={p} className="participant-tag">{p}</span>
       })}
