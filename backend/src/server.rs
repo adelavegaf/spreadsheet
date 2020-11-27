@@ -4,11 +4,16 @@
 
 use actix::prelude::*;
 use rand::{self, rngs::ThreadRng, Rng};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-#[derive(Message)]
+#[derive(Clone, Message, Serialize, Deserialize)]
 #[rtype(result = "()")]
-pub enum Event {}
+#[serde(tag = "type")]
+pub enum Event {
+  Participants { ids: HashSet<usize> },
+  CellLock { id: usize, row: usize, col: usize },
+}
 
 #[derive(Message)]
 #[rtype(usize)]
@@ -31,10 +36,6 @@ pub struct WsServer {
   rng: ThreadRng,
 }
 
-impl Actor for WsServer {
-  type Context = Context<Self>;
-}
-
 impl Default for WsServer {
   fn default() -> WsServer {
     WsServer {
@@ -45,6 +46,25 @@ impl Default for WsServer {
   }
 }
 
+impl WsServer {
+  fn broadcast_participants(&self, spreadsheet: usize) {
+    // TODO(adelavega): add proper error handling -- no unwraps!
+    let session_ids = self.spreadsheets.get(&spreadsheet).unwrap();
+    for id in session_ids {
+      let addr = self.sessions.get(id).unwrap();
+      let msg = Event::Participants {
+        // TODO(adelavega): cloning on every iteration seems expensive.
+        ids: session_ids.clone(),
+      };
+      let _ = addr.do_send(msg);
+    }
+  }
+}
+
+impl Actor for WsServer {
+  type Context = Context<Self>;
+}
+
 impl Handler<Connect> for WsServer {
   type Result = usize;
 
@@ -52,17 +72,19 @@ impl Handler<Connect> for WsServer {
     println!("Someone connected to spreadsheet {}", msg.spreadsheet_id);
 
     // register session with random id
-    let session_id = self.rng.gen::<usize>();
-    self.sessions.insert(session_id, msg.addr);
+    let new_session_id = self.rng.gen::<usize>();
+    self.sessions.insert(new_session_id, msg.addr);
 
     // add session to the list of subscribers to the specified spreadsheet
     self
       .spreadsheets
       .entry(msg.spreadsheet_id)
       .or_insert_with(HashSet::new)
-      .insert(session_id);
+      .insert(new_session_id);
 
-    session_id
+    self.broadcast_participants(msg.spreadsheet_id);
+
+    new_session_id
   }
 }
 
@@ -71,13 +93,21 @@ impl Handler<Disconnect> for WsServer {
 
   fn handle(&mut self, msg: Disconnect, _: &mut Context<Self>) {
     println!("{} disconnected", msg.session_id);
+
     // Remove session id from sessions map
     self.sessions.remove(&msg.session_id);
+
     // Remove session id from all spreadsheets
-    for (_, session_ids) in &mut self.spreadsheets {
-      session_ids.remove(&msg.session_id);
+    let mut updated_spreadsheets = vec![];
+    for (spreadsheet, session_ids) in &mut self.spreadsheets {
+      if session_ids.remove(&msg.session_id) {
+        updated_spreadsheets.push(*spreadsheet);
+      }
     }
-    // TODO(adelavega): advertise to other users in the same spreadsheet session
-    // someone logged out.
+
+    // Advertise changes to all clients
+    for spreadsheet in updated_spreadsheets {
+      self.broadcast_participants(spreadsheet);
+    }
   }
 }

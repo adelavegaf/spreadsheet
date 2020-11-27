@@ -74,7 +74,10 @@ impl Actor for WsSession {
 impl Handler<server::Event> for WsSession {
     type Result = ();
 
-    fn handle(&mut self, _msg: server::Event, _: &mut Self::Context) {}
+    fn handle(&mut self, msg: server::Event, ctx: &mut Self::Context) {
+        let json = serde_json::to_string(&msg).unwrap();
+        ctx.text(json);
+    }
 }
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
