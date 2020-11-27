@@ -5,6 +5,30 @@ const cells = ss.cells();
 const width = ss.width();
 const height = ss.height();
 
+// websocket stuff
+let conn = null;
+const connect = () => {
+  // const wsUri = `${window.location.protocol === 'https:' ? 'wss://' : 'ws://'}${window.location.host}/ws/`;
+  const wsUri = "ws://localhost:8888/ws/";
+  conn = new WebSocket(wsUri);
+  console.log("connecting");
+
+  conn.onopen = () => {
+    console.log("connected");
+  };
+
+  conn.onmessage = (e) => {
+    console.log("received: ", e);
+  };
+
+  conn.onclose = () => {
+    console.log("disconnected");
+    conn = null;
+  };
+};
+connect();
+// end of websocket stuff
+
 const getIndex = (row, col) => {
   return row * width + col;
 };
