@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import './App.css';
 import { Spreadsheet } from "spreadsheet";
 
@@ -7,7 +7,57 @@ const initialCells = ss.cells();
 const width = ss.width();
 const height = ss.height();
 
-const App = () => {  
+const App = () => {
+  const [participants, setParticipants] = useState([]);
+  const ws = useRef(null);
+
+  useEffect(() => {
+    ws.current = new WebSocket("ws://localhost:8888/ws/");
+
+    ws.current.onopen = () => {
+      console.log("connected");
+    };
+  
+    ws.current.onmessage = (e) => {
+      console.log("message", e);
+      const event = JSON.parse(e.data);
+      switch (event.type) {
+        case "Participants":
+          setParticipants(event.ids);
+          break;
+        default:
+          break;
+      }
+    };
+  
+    ws.current.onclose = () => {
+      console.log("disconnected");
+    };
+
+    return () => {
+        ws.current.close();
+    };
+  }, []);
+
+  return (
+    <>
+      <Participants participants={participants}/>
+      <Table/>
+    </>
+  )
+};
+
+const Participants = ({participants}) => {
+  return (
+    <div className="participant-container">
+      {participants.map(p => {
+        return <span key={p} className="participant-tag">{p}</span>
+      })}
+    </div>
+  )
+}
+
+const Table = () => {
   const [cells, setCells] = useState(initialCells);
   const [selectedCell, setSelectedCell] = useState({row: 0, col: 0});
 
@@ -31,10 +81,12 @@ const App = () => {
   };
 
   return (
-    <table id="table" cellSpacing="0">
-      <TableHeader width={width}/>
-      <TableBody width={width} height={height} cells={cells} selectedCell={selectedCell} onCellFocus={onCellFocus} onCellBlur={onCellBlur}/>
-    </table>
+    <div className="table-container">
+      <table id="table" cellSpacing="0">
+        <TableHeader width={width}/>
+        <TableBody width={width} height={height} cells={cells} selectedCell={selectedCell} onCellFocus={onCellFocus} onCellBlur={onCellBlur}/>
+      </table>
+    </div>
   );
 };
 

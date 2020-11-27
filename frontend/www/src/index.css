@@ -3,6 +3,11 @@ body {
   margin: 0px;
 }
 
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+}
+
 .cell-header {
   padding: 0px;
   border-style: solid;
@@ -25,4 +30,22 @@ body {
   width: 100%;
   border: 1px solid white;
   box-shadow: 0 0 1px black;
+}
+
+.participant-container {
+  display: flex;
+  flex-direction: row-reverse;
+  margin-top: 8px;
+  margin-bottom: 8px;
+  width: 100%;
+}
+
+.participant-tag {
+  font-size: 14px;
+  padding: 8px;
+  margin-right: 4px;
+  margin-left: 4px;
+  background-color: rgb(230, 230, 230);
+  border-radius: 16px;
+  flex: none;
 }
