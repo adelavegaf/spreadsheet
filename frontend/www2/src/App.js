@@ -1,17 +1,19 @@
-import { useEffect, useRef, useState } from "react";
-import logo from './logo.svg';
+import { useEffect, useState } from "react";
 import './App.css';
 import { Spreadsheet } from "spreadsheet";
 
-const App = () => {
-  const ss = Spreadsheet.new();
-  const initialCells = ss.cells();
-  const width = ss.width();
-  const height = ss.height();
+const ss = Spreadsheet.new();
+const initialCells = ss.cells();
+const width = ss.width();
+const height = ss.height();
 
+const App = () => {  
   const [cells, setCells] = useState(initialCells);
+  const [selectedCell, setSelectedCell] = useState({row: 0, col: 0});
 
-  const onCellFocus = (row, col, out) => {};
+  const onCellFocus = (row, col) => {
+    setSelectedCell({row: row, col: col});
+  };
 
   const onCellBlur = (row, col, raw) => {
     const idx = getCellIndex(row, col, width);
@@ -28,16 +30,10 @@ const App = () => {
     });
   };
 
-  const rows = range(height).map(row => {
-    return <TableRow key={`row-${row}`} row={row} width={width} cells={cells} onCellFocus={onCellFocus} onCellBlur={onCellBlur}/>
-  });
-
   return (
     <table id="table" cellSpacing="0">
       <TableHeader width={width}/>
-      <tbody>
-        {rows}
-      </tbody>
+      <TableBody width={width} height={height} cells={cells} selectedCell={selectedCell} onCellFocus={onCellFocus} onCellBlur={onCellBlur}/>
     </table>
   );
 };
@@ -46,9 +42,9 @@ const TableHeader = ({width}) => {
   return (
     <thead>
       <tr>
-        <td className="cell-header"/>
+        <th className="cell-header"/>
         {
-          range(width).map(idx => <td key={`header-${idx}`} className="cell-header">{colToLetters(idx)}</td>)
+          range(width).map(idx => <th key={`header-${idx}`} className="cell-header">{colToLetters(idx)}</th>)
         }
       </tr>
     </thead>
@@ -75,23 +71,41 @@ const colToLetters = (col) => {
   return String.fromCharCode(asciiCode);
 };
 
-const TableRow = ({row, width, cells, onCellFocus, onCellBlur}) => {
-  const tableCells = range(width).map(col => {
-    const idx = getCellIndex(row, col, width);
-    return (
-      <TableCell key={`cell-${col}-${row}`} row={row} col={col} cell={cells[idx]} onCellFocus={onCellFocus} onCellBlur={onCellBlur}/>
-    )
+const TableBody = ({width, height, cells, selectedCell, onCellFocus, onCellBlur}) => {
+  const rows = range(height).map(row => {
+      return (
+        <tr key={`row-${row}`}>
+          <td className="cell-header">{row + 1}</td>
+          {
+          range(width).map((col) => {
+            const idx = getCellIndex(row, col, width);
+            const isFocused = selectedCell.row === row && selectedCell.col === col;
+            return (
+              <TableCell key={`cell-${col}-${row}`} row={row} col={col} cell={cells[idx]} isFocused={isFocused} onCellFocus={onCellFocus} onCellBlur={onCellBlur}/>
+            );
+          })
+          }
+        </tr>
+      );
   });
+
   return (
-    <tr>
-      <td className="cell-header">{row + 1}</td>
-      {tableCells}
-    </tr>
+    <tbody>
+      {rows}
+    </tbody>
   );
 };
 
-const TableCell = ({row, col, cell, onCellFocus, onCellBlur}) => {
-  const [value, setValue] = useState(cell.out);
+const TableCell = ({row, col, cell, isFocused, onCellFocus, onCellBlur}) => {
+  const [value, setValue] = useState("");
+  useEffect(() => {
+    if (isFocused) {
+      setValue(cell.raw);
+      return;
+    }
+    setValue(cell.raw.length > 0 ? cell.out : "");
+  }, [isFocused, cell]);
+
   // Ideally we would do this with useEffect but it was painfully slow to register
   // an effect on all of the cells.
   const onKeyDown = (event) => {
@@ -119,20 +133,16 @@ const TableCell = ({row, col, cell, onCellFocus, onCellBlur}) => {
   };
 
   const onFocus = (e) => {
-    console.log("focus");
-    onCellFocus(row, col, e.target.value);
-    setValue(cell.raw);
+    onCellFocus(row, col);
   };
 
   const onBlur = (e) => {
-    console.log("blur");
-    onCellBlur(row, col, e.target.value);
-    setValue(cell.out);
+    onCellBlur(row, col, value);
   };
 
   return (
-    <td className="cell" onKeyDown={onKeyDown}>
-      <input id={`input-${row}-${col}`} className="cell-input" onChange={onChange} onFocus={onFocus} onBlur={onBlur} value={value}/>
+    <td className="cell" >
+      <input id={`input-${row}-${col}`} className="cell-input" onChange={onChange} onKeyDown={onKeyDown} onFocus={onFocus} onBlur={onBlur} value={value}/>
     </td>
   )
 };
