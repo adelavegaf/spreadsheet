@@ -8,9 +8,46 @@ const width = ss.width();
 const height = ss.height();
 
 const App = () => {
+  // websocket specifics
+  const [userId, setUserId] = useState(-1);
   const [isOnline, setIsOnline] = useState(false);
   const [participants, setParticipants] = useState([]);
   const ws = useRef(null);
+
+  // sheet specific
+  const [cells, setCells] = useState(initialCells);
+  const [selectedCell, setSelectedCell] = useState({row: 0, col: 0});
+
+  const updateCell = (row, col, raw) => {
+    const updates = ss.set(row, col, raw);
+    setCells(prevCells => {
+      const newCells = [...prevCells];
+      for (const [idx, cell] of Object.entries(updates)) {
+        newCells[idx] = cell;
+      }
+      return newCells;
+    });
+  };
+
+  const onCellUpdate = (row, col, raw) => {
+    const idx = getCellIndex(row, col, width);
+    if (raw === cells[idx].raw) {
+      return;
+    }
+
+    updateCell(row, col, raw);
+
+    // Advertise update to other users via websocket
+    ws.current.send(JSON.stringify({type: "CellUpdated", row: row, col: col, raw: raw}));
+  };
+
+  const onCellSelect = (row, col) => {
+    // Update state
+    setSelectedCell({row: row, col: col});
+    // Advertise update to other users via websocket
+    // Enable once we figure out how to make it not lag.
+    // ws.current.send(JSON.stringify({type: "CellLocked", row: row, col: col, locker_id: userId}));
+  };
 
   useEffect(() => {
     ws.current = new WebSocket("ws://localhost:8888/ws/");
@@ -21,11 +58,22 @@ const App = () => {
   
     ws.current.onmessage = (e) => {
       const event = JSON.parse(e.data);
+      console.log("event", event);
       switch (event.type) {
+        case "Connected":
+          setUserId(event.id);
+          break;
         case "Participants":
           setParticipants(event.ids);
           break;
+        case "CellUpdated":
+          updateCell(event.row, event.col, event.raw);
+          break;
+        case "CellLocked":
+          console.log("cell locked");
+          break;
         default:
+          console.error("unhandled event", event);
           break;
       }
     };
@@ -42,7 +90,7 @@ const App = () => {
   return (
     <>
       <Participants participants={participants} isOnline={isOnline}/>
-      <Table/>
+      <Table width={width} height={height} cells={cells} selectedCell={selectedCell} onCellSelect={onCellSelect} onCellUpdate={onCellUpdate}/>
     </>
   )
 };
@@ -58,34 +106,12 @@ const Participants = ({participants, isOnline}) => {
   )
 }
 
-const Table = () => {
-  const [cells, setCells] = useState(initialCells);
-  const [selectedCell, setSelectedCell] = useState({row: 0, col: 0});
-
-  const onCellFocus = (row, col) => {
-    setSelectedCell({row: row, col: col});
-  };
-
-  const onCellBlur = (row, col, raw) => {
-    const idx = getCellIndex(row, col, width);
-    if (raw === cells[idx].raw) {
-      return;
-    }
-    const updates = ss.set(row, col, raw);
-    setCells(prevCells => {
-      const newCells = [...prevCells];
-      for (const [idx, cell] of Object.entries(updates)) {
-        newCells[idx] = cell;
-      }
-      return newCells;
-    });
-  };
-
+const Table = ({width, height, cells, selectedCell, onCellSelect, onCellUpdate }) => {
   return (
     <div className="table-container">
       <table id="table" cellSpacing="0">
         <TableHeader width={width}/>
-        <TableBody width={width} height={height} cells={cells} selectedCell={selectedCell} onCellFocus={onCellFocus} onCellBlur={onCellBlur}/>
+        <TableBody width={width} height={height} cells={cells} selectedCell={selectedCell} onCellSelect={onCellSelect} onCellUpdate={onCellUpdate}/>
       </table>
     </div>
   );
@@ -124,7 +150,7 @@ const colToLetters = (col) => {
   return String.fromCharCode(asciiCode);
 };
 
-const TableBody = ({width, height, cells, selectedCell, onCellFocus, onCellBlur}) => {
+const TableBody = ({width, height, cells, selectedCell, onCellSelect, onCellUpdate}) => {
   const rows = range(height).map(row => {
       return (
         <tr key={`row-${row}`}>
@@ -134,7 +160,7 @@ const TableBody = ({width, height, cells, selectedCell, onCellFocus, onCellBlur}
             const idx = getCellIndex(row, col, width);
             const isFocused = selectedCell.row === row && selectedCell.col === col;
             return (
-              <TableCell key={`cell-${col}-${row}`} row={row} col={col} cell={cells[idx]} isFocused={isFocused} onCellFocus={onCellFocus} onCellBlur={onCellBlur}/>
+              <TableCell key={`cell-${col}-${row}`} row={row} col={col} cell={cells[idx]} isFocused={isFocused} onCellSelect={onCellSelect} onCellUpdate={onCellUpdate}/>
             );
           })
           }
@@ -149,7 +175,7 @@ const TableBody = ({width, height, cells, selectedCell, onCellFocus, onCellBlur}
   );
 };
 
-const TableCell = ({row, col, cell, isFocused, onCellFocus, onCellBlur}) => {
+const TableCell = ({row, col, cell, isFocused, onCellSelect, onCellUpdate}) => {
   const [value, setValue] = useState("");
   useEffect(() => {
     if (isFocused) {
@@ -186,11 +212,11 @@ const TableCell = ({row, col, cell, isFocused, onCellFocus, onCellBlur}) => {
   };
 
   const onFocus = (e) => {
-    onCellFocus(row, col);
+    onCellSelect(row, col);
   };
 
   const onBlur = (e) => {
-    onCellBlur(row, col, value);
+    onCellUpdate(row, col, value);
   };
 
   return (
