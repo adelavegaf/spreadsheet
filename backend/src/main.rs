@@ -45,13 +45,10 @@ impl Actor for WsSession {
     fn started(&mut self, ctx: &mut Self::Context) {
         self.hb(ctx);
 
-        let spreadsheet_id = 1;
+        let sheet_id = 1;
         let addr = ctx.address().recipient();
         self.addr
-            .send(server::Connect {
-                spreadsheet_id,
-                addr,
-            })
+            .send(server::Connect { sheet_id, addr })
             .into_actor(self)
             .then(|res, act, ctx| {
                 match res {
@@ -64,9 +61,7 @@ impl Actor for WsSession {
     }
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
-        self.addr.do_send(server::Disconnect {
-            session_id: self.id,
-        });
+        self.addr.do_send(server::Disconnect { user_id: self.id });
         Running::Stop
     }
 }
@@ -82,7 +77,6 @@ impl Handler<server::Event> for WsSession {
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
-        println!("WS: {:?}", msg);
         match msg {
             Ok(ws::Message::Ping(msg)) => {
                 self.hb = Instant::now();
@@ -91,7 +85,12 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
             Ok(ws::Message::Pong(_)) => {
                 self.hb = Instant::now();
             }
-            Ok(ws::Message::Text(text)) => ctx.text(text),
+            Ok(ws::Message::Text(text)) => {
+                self.addr.do_send(server::Text {
+                    user_id: self.id,
+                    data: text,
+                });
+            }
             Ok(ws::Message::Binary(bin)) => ctx.binary(bin),
             Ok(ws::Message::Close(reason)) => {
                 ctx.close(reason);
@@ -108,7 +107,7 @@ impl WsSession {
         ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
             if Instant::now().duration_since(act.hb) > CLIENT_TIMEOUT {
                 println!("Websocket Client heartbeat failed, disconnecting!");
-                act.addr.do_send(server::Disconnect { session_id: act.id });
+                act.addr.do_send(server::Disconnect { user_id: act.id });
                 ctx.stop();
                 return;
             }
