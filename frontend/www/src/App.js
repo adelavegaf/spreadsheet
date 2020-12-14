@@ -45,6 +45,7 @@ const App = () => {
 
   const onCellSelect = (row, col) => {
     // Update state
+    console.log("on cell select");
     setSelectedCell({ row: row, col: col });
     // Advertise update to other users via websocket
     // Enable once we figure out how to make it not lag.
@@ -92,6 +93,7 @@ const App = () => {
   return (
     <>
       <Participants participants={participants} isOnline={isOnline} />
+      <FormulaBar cells={cells} selectedCell={selectedCell} />
       <Table
         width={width}
         height={height}
@@ -119,6 +121,13 @@ const Participants = ({ participants, isOnline }) => {
       })}
     </div>
   );
+};
+
+const FormulaBar = ({ cells, selectedCell }) => {
+  const { row, col } = selectedCell;
+  const idx = getCellIndex(row, col, width);
+  const cell = cells[idx];
+  return <input value={cell.raw} style={{ width: "100%" }} readOnly />;
 };
 
 const Table = ({
