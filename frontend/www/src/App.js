@@ -131,28 +131,6 @@ const FormulaBar = () => {
 };
 
 const Table = ({ width, height, focusedCellIndex, onCellFocus }) => {
-  // Ideally we would do this with useEffect but it was painfully slow to register
-  // an effect on all of the cells.
-  // const onKeyDown = (event) => {
-  //   let dy = 0;
-  //   let dx = 0;
-  //   if (event.key === "Enter") {
-  //     dy = 1;
-  //   } else if (event.key === "ArrowDown") {
-  //     dy = 1;
-  //   } else if (event.key === "ArrowUp") {
-  //     dy = -1;
-  //   } else if (event.key === "ArrowRight") {
-  //     dx = 1;
-  //   } else if (event.key === "ArrowLeft") {
-  //     dx = -1;
-  //   }
-  //   const input = document.getElementById(`input-${row + dy}-${col + dx}`);
-  //   if (input) {
-  //     input.focus();
-  //   }
-  // };
-
   return (
     <div className="table-container">
       <table id="table" cellSpacing="0">
@@ -207,6 +185,27 @@ const colToLetters = (col) => {
 
 const TableBody = ({ width, height, focusedCellIndex, onCellFocus }) => {
   const { cells, updateCell } = useContext(CellsContext);
+
+  const onKeyDown = (event) => {
+    let dy = 0;
+    let dx = 0;
+    if (event.key === "Enter") {
+      dy = 1;
+    } else if (event.key === "ArrowDown") {
+      dy = 1;
+    } else if (event.key === "ArrowUp") {
+      dy = -1;
+    } else if (event.key === "ArrowRight") {
+      dx = 1;
+    } else if (event.key === "ArrowLeft") {
+      dx = -1;
+    }
+    const [curRow, curCol] = getCellRowCol(focusedCellIndex, width);
+    const row = Math.min(Math.max(curRow + dy, 0), height - 1);
+    const col = Math.min(Math.max(curCol + dx, 0), width - 1);
+    onCellFocus(row, col);
+  };
+
   const rows = range(height).map((row) => {
     return (
       <tr key={row}>
@@ -230,7 +229,7 @@ const TableBody = ({ width, height, focusedCellIndex, onCellFocus }) => {
     );
   });
 
-  return <tbody>{rows}</tbody>;
+  return <tbody onKeyDown={onKeyDown}>{rows}</tbody>;
 };
 
 const TableCell = ({ row, col, cell, isFocused, onFocus, onUpdate }) => {
@@ -284,6 +283,12 @@ const range = (upper) => {
 
 const getCellIndex = (row, col, width) => {
   return row * width + col;
+};
+
+const getCellRowCol = (index, width) => {
+  const col = index % width;
+  const row = Math.floor(index / width);
+  return [row, col];
 };
 
 export default App;
