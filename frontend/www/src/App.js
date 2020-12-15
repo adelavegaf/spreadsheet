@@ -6,12 +6,10 @@ import { Spreadsheet } from "spreadsheet";
 
 const ss = Spreadsheet.new();
 const initialCells = ss.cells();
-const initialCell = initialCells[0];
-const initialCurCell = { row: 0, col: 0 };
+const initCell = initialCells[0];
+const initFocusedCell = { row: 0, col: 0 };
 const width = ss.width();
 const height = ss.height();
-
-const hookset = new Set();
 
 const App = () => {
   return (
@@ -42,52 +40,50 @@ const App = () => {
 const Sheet = () => {
   // sheet specific
   const [cells, setCells] = useState(initialCells);
-  const [curCell, setCurCell] = useState(initialCurCell);
-  const [curRaw, setCurRaw] = useState(initialCell.raw);
+  const [focusedCell, setFocusedCell] = useState(initFocusedCell);
+  const [focusedCellValue, setFocusedCellValue] = useState(initCell.raw);
 
-  const onRawUpdate = useCallback((raw) => {
-    setCurRaw(raw);
-  }, []);
+  const onCellFocus = (row, col) => {
+    const idx = getCellIndex(row, col, width);
+    setFocusedCell({ row, col });
+    setFocusedCellValue(cells[idx].raw);
+  };
 
-  const onCellUpdate = useCallback(
-    (row, col, raw) => {
-      const idx = getCellIndex(row, col, width);
-      if (raw === cells[idx].raw) {
-        return;
+  const onFocusedCellValueChange = (value) => {
+    setFocusedCellValue(value);
+  };
+
+  const onFocusedCellBlur = (row, col) => {
+    console.log("blurring", row, col);
+    const idx = getCellIndex(row, col, width);
+    if (focusedCellValue === cells[idx].raw) {
+      return;
+    }
+    const updates = ss.set(row, col, focusedCellValue);
+    setCells((prevCells) => {
+      const newCells = [...prevCells];
+      for (const [idx, cell] of Object.entries(updates)) {
+        newCells[idx] = cell;
       }
-      const updates = ss.set(row, col, raw);
-      setCells((prevCells) => {
-        const newCells = [...prevCells];
-        for (const [idx, cell] of Object.entries(updates)) {
-          newCells[idx] = cell;
-        }
-        return newCells;
-      });
-    },
-    [cells]
-  );
-
-  const onCellSelect = useCallback((row, col) => {
-    // Update state
-    setCurCell({ row, col });
-  }, []);
-
-  hookset.add(onRawUpdate);
-  hookset.add(onCellUpdate);
-  hookset.add(onCellSelect);
-
-  console.log(hookset, hookset.size);
+      return newCells;
+    });
+  };
 
   return (
     <>
-      <FormulaBar value={curRaw} onChange={onRawUpdate} />
+      <FormulaBar
+        value={focusedCellValue}
+        onChange={onFocusedCellValueChange}
+      />
       <Table
         width={width}
         height={height}
         cells={cells}
-        curCell={curCell}
-        onCellSelect={onCellSelect}
-        onCellUpdate={onCellUpdate}
+        onCellFocus={onCellFocus}
+        focusedCell={focusedCell}
+        focusedCellValue={focusedCellValue}
+        onFocusedCellValueChange={onFocusedCellValueChange}
+        onFocusedCellBlur={onFocusedCellBlur}
       />
     </>
   );
@@ -107,27 +103,51 @@ const Table = ({
   width,
   height,
   cells,
-  curCell,
-  onCellSelect,
-  onCellUpdate,
+  onCellFocus,
+  focusedCell,
+  focusedCellValue,
+  onFocusedCellValueChange,
+  onFocusedCellBlur,
 }) => {
-  return useMemo(() => {
-    return (
-      <div className="table-container">
-        <table id="table" cellSpacing="0">
-          <TableHeader width={width} />
-          <TableBody
-            width={width}
-            height={height}
-            cells={cells}
-            curCell={curCell}
-            onCellSelect={onCellSelect}
-            onCellUpdate={onCellUpdate}
-          />
-        </table>
-      </div>
-    );
-  }, [width, height, cells, curCell, onCellSelect, onCellUpdate]);
+  // Ideally we would do this with useEffect but it was painfully slow to register
+  // an effect on all of the cells.
+  // const onKeyDown = (event) => {
+  //   let dy = 0;
+  //   let dx = 0;
+  //   if (event.key === "Enter") {
+  //     dy = 1;
+  //   } else if (event.key === "ArrowDown") {
+  //     dy = 1;
+  //   } else if (event.key === "ArrowUp") {
+  //     dy = -1;
+  //   } else if (event.key === "ArrowRight") {
+  //     dx = 1;
+  //   } else if (event.key === "ArrowLeft") {
+  //     dx = -1;
+  //   }
+  //   const input = document.getElementById(`input-${row + dy}-${col + dx}`);
+  //   if (input) {
+  //     input.focus();
+  //   }
+  // };
+
+  return (
+    <div className="table-container">
+      <table id="table" cellSpacing="0">
+        <TableHeader width={width} />
+        <TableBody
+          width={width}
+          height={height}
+          cells={cells}
+          onCellFocus={onCellFocus}
+          focusedCell={focusedCell}
+          focusedCellValue={focusedCellValue}
+          onFocusedCellValueChange={onFocusedCellValueChange}
+          onFocusedCellBlur={onFocusedCellBlur}
+        />
+      </table>
+    </div>
+  );
 };
 
 const TableHeader = ({ width }) => {
@@ -171,9 +191,11 @@ const TableBody = ({
   width,
   height,
   cells,
-  curCell,
-  onCellSelect,
-  onCellUpdate,
+  onCellFocus,
+  focusedCell,
+  focusedCellValue,
+  onFocusedCellValueChange,
+  onFocusedCellBlur,
 }) => {
   const rows = range(height).map((row) => {
     return (
@@ -181,16 +203,25 @@ const TableBody = ({
         <td className="cell-header">{row + 1}</td>
         {range(width).map((col) => {
           const idx = getCellIndex(row, col, width);
-          const isFocused = curCell.row === row && curCell.col === col;
-          return (
-            <TableCell
-              key={`cell-${col}-${row}`}
+          const cell = cells[idx];
+          const key = `cell-${idx}`;
+          const isFocused = focusedCell.row === row && focusedCell.col === col;
+          return isFocused ? (
+            <FocusedTableCell
+              key={key}
               row={row}
               col={col}
-              cell={cells[idx]}
-              isFocused={isFocused}
-              onCellSelect={onCellSelect}
-              onCellUpdate={onCellUpdate}
+              value={focusedCellValue}
+              onChange={onFocusedCellValueChange}
+              onBlur={onFocusedCellBlur}
+            />
+          ) : (
+            <TableCell
+              key={key}
+              row={row}
+              col={col}
+              value={cell.raw ? cell.out : ""}
+              onFocus={onCellFocus}
             />
           );
         })}
@@ -201,67 +232,28 @@ const TableBody = ({
   return <tbody>{rows}</tbody>;
 };
 
-const TableCell = ({
-  row,
-  col,
-  cell,
-  isFocused,
-  onCellSelect,
-  onCellUpdate,
-}) => {
-  const [value, setValue] = useState("");
-  useEffect(() => {
-    if (isFocused) {
-      setValue(cell.raw);
-      return;
-    }
-    setValue(cell.raw.length > 0 ? cell.out : "");
-  }, [isFocused, cell]);
-
-  // Ideally we would do this with useEffect but it was painfully slow to register
-  // an effect on all of the cells.
-  const onKeyDown = (event) => {
-    let dy = 0;
-    let dx = 0;
-    if (event.key === "Enter") {
-      dy = 1;
-    } else if (event.key === "ArrowDown") {
-      dy = 1;
-    } else if (event.key === "ArrowUp") {
-      dy = -1;
-    } else if (event.key === "ArrowRight") {
-      dx = 1;
-    } else if (event.key === "ArrowLeft") {
-      dx = -1;
-    }
-    const input = document.getElementById(`input-${row + dy}-${col + dx}`);
-    if (input) {
-      input.focus();
-    }
-  };
-
-  const onChange = (e) => {
-    setValue(e.target.value);
-  };
-
-  const onFocus = () => {
-    onCellSelect(row, col);
-  };
-
-  const onBlur = () => {
-    onCellUpdate(row, col, value);
-  };
-
+const FocusedTableCell = ({ row, col, value, onChange, onBlur }) => {
   return (
     <td className="cell">
       <input
-        id={`input-${row}-${col}`}
         className="cell-input"
-        onChange={onChange}
-        onKeyDown={onKeyDown}
-        onFocus={onFocus}
-        onBlur={onBlur}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={() => onBlur(row, col)}
         value={value}
+        autoFocus
+      />
+    </td>
+  );
+};
+
+const TableCell = ({ row, col, value, onFocus }) => {
+  return (
+    <td className="cell">
+      <input
+        className="cell-input"
+        onFocus={() => onFocus(row, col)}
+        value={value}
+        readOnly
       />
     </td>
   );
