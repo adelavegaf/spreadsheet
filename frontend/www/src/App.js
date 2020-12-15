@@ -1,104 +1,91 @@
-import { useEffect, useRef, useState } from "react";
+/* eslint-disable no-unused-vars */
+import React from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import "./App.css";
 import { Spreadsheet } from "spreadsheet";
 
 const ss = Spreadsheet.new();
 const initialCells = ss.cells();
+const initialCell = initialCells[0];
+const initialCurCell = { row: 0, col: 0 };
 const width = ss.width();
 const height = ss.height();
 
-const App = () => {
-  // websocket specifics
-  const [userId, setUserId] = useState(-1);
-  const [isOnline, setIsOnline] = useState(false);
-  const [participants, setParticipants] = useState([]);
-  const ws = useRef(null);
+const hookset = new Set();
 
+const App = () => {
+  return (
+    <>
+      {/* <Participants participants={participants} isOnline={isOnline} /> */}
+      <Sheet />
+    </>
+  );
+};
+
+// const Participants = ({ participants, isOnline }) => {
+//   return (
+//     <div className="participant-container">
+//       <span
+//         className={isOnline ? "online-status online" : "online-status offline"}
+//       />
+//       {participants.map((p) => {
+//         return (
+//           <span key={p} className="participant-tag">
+//             {p}
+//           </span>
+//         );
+//       })}
+//     </div>
+//   );
+// };
+
+const Sheet = () => {
   // sheet specific
   const [cells, setCells] = useState(initialCells);
-  const [selectedCell, setSelectedCell] = useState({ row: 0, col: 0 });
+  const [curCell, setCurCell] = useState(initialCurCell);
+  const [curRaw, setCurRaw] = useState(initialCell.raw);
 
-  const updateCell = (row, col, raw) => {
-    const updates = ss.set(row, col, raw);
-    setCells((prevCells) => {
-      const newCells = [...prevCells];
-      for (const [idx, cell] of Object.entries(updates)) {
-        newCells[idx] = cell;
-      }
-      return newCells;
-    });
-  };
-
-  const onCellUpdate = (row, col, raw) => {
-    const idx = getCellIndex(row, col, width);
-    if (raw === cells[idx].raw) {
-      return;
-    }
-
-    updateCell(row, col, raw);
-
-    // Advertise update to other users via websocket
-    ws.current.send(
-      JSON.stringify({ type: "CellUpdated", row: row, col: col, raw: raw })
-    );
-  };
-
-  const onCellSelect = (row, col) => {
-    // Update state
-    console.log("on cell select");
-    setSelectedCell({ row: row, col: col });
-    // Advertise update to other users via websocket
-    // Enable once we figure out how to make it not lag.
-    // ws.current.send(JSON.stringify({type: "CellLocked", row: row, col: col, locker_id: userId}));
-  };
-
-  useEffect(() => {
-    ws.current = new WebSocket("ws://localhost:8888/ws/");
-
-    ws.current.onopen = () => {
-      setIsOnline(true);
-    };
-
-    ws.current.onmessage = (e) => {
-      const event = JSON.parse(e.data);
-      console.log("event", event);
-      switch (event.type) {
-        case "Connected":
-          setUserId(event.id);
-          break;
-        case "Participants":
-          setParticipants(event.ids);
-          break;
-        case "CellUpdated":
-          updateCell(event.row, event.col, event.raw);
-          break;
-        case "CellLocked":
-          console.log("cell locked");
-          break;
-        default:
-          console.error("unhandled event", event);
-          break;
-      }
-    };
-
-    ws.current.onclose = () => {
-      setIsOnline(false);
-    };
-
-    return () => {
-      ws.current.close();
-    };
+  const onRawUpdate = useCallback((raw) => {
+    setCurRaw(raw);
   }, []);
+
+  const onCellUpdate = useCallback(
+    (row, col, raw) => {
+      const idx = getCellIndex(row, col, width);
+      if (raw === cells[idx].raw) {
+        return;
+      }
+      const updates = ss.set(row, col, raw);
+      setCells((prevCells) => {
+        const newCells = [...prevCells];
+        for (const [idx, cell] of Object.entries(updates)) {
+          newCells[idx] = cell;
+        }
+        return newCells;
+      });
+    },
+    [cells]
+  );
+
+  const onCellSelect = useCallback((row, col) => {
+    // Update state
+    setCurCell({ row, col });
+  }, []);
+
+  hookset.add(onRawUpdate);
+  hookset.add(onCellUpdate);
+  hookset.add(onCellSelect);
+
+  console.log(hookset, hookset.size);
 
   return (
     <>
-      <Participants participants={participants} isOnline={isOnline} />
-      <FormulaBar cells={cells} selectedCell={selectedCell} />
+      <FormulaBar value={curRaw} onChange={onRawUpdate} />
       <Table
         width={width}
         height={height}
         cells={cells}
-        selectedCell={selectedCell}
+        curCell={curCell}
         onCellSelect={onCellSelect}
         onCellUpdate={onCellUpdate}
       />
@@ -106,53 +93,41 @@ const App = () => {
   );
 };
 
-const Participants = ({ participants, isOnline }) => {
+const FormulaBar = ({ value, onChange }) => {
   return (
-    <div className="participant-container">
-      <span
-        className={isOnline ? "online-status online" : "online-status offline"}
-      />
-      {participants.map((p) => {
-        return (
-          <span key={p} className="participant-tag">
-            {p}
-          </span>
-        );
-      })}
-    </div>
+    <input
+      value={value}
+      style={{ width: "100%" }}
+      onChange={(e) => onChange(e.target.value)}
+    />
   );
-};
-
-const FormulaBar = ({ cells, selectedCell }) => {
-  const { row, col } = selectedCell;
-  const idx = getCellIndex(row, col, width);
-  const cell = cells[idx];
-  return <input value={cell.raw} style={{ width: "100%" }} readOnly />;
 };
 
 const Table = ({
   width,
   height,
   cells,
-  selectedCell,
+  curCell,
   onCellSelect,
   onCellUpdate,
 }) => {
-  return (
-    <div className="table-container">
-      <table id="table" cellSpacing="0">
-        <TableHeader width={width} />
-        <TableBody
-          width={width}
-          height={height}
-          cells={cells}
-          selectedCell={selectedCell}
-          onCellSelect={onCellSelect}
-          onCellUpdate={onCellUpdate}
-        />
-      </table>
-    </div>
-  );
+  return useMemo(() => {
+    return (
+      <div className="table-container">
+        <table id="table" cellSpacing="0">
+          <TableHeader width={width} />
+          <TableBody
+            width={width}
+            height={height}
+            cells={cells}
+            curCell={curCell}
+            onCellSelect={onCellSelect}
+            onCellUpdate={onCellUpdate}
+          />
+        </table>
+      </div>
+    );
+  }, [width, height, cells, curCell, onCellSelect, onCellUpdate]);
 };
 
 const TableHeader = ({ width }) => {
@@ -196,7 +171,7 @@ const TableBody = ({
   width,
   height,
   cells,
-  selectedCell,
+  curCell,
   onCellSelect,
   onCellUpdate,
 }) => {
@@ -206,8 +181,7 @@ const TableBody = ({
         <td className="cell-header">{row + 1}</td>
         {range(width).map((col) => {
           const idx = getCellIndex(row, col, width);
-          const isFocused =
-            selectedCell.row === row && selectedCell.col === col;
+          const isFocused = curCell.row === row && curCell.col === col;
           return (
             <TableCell
               key={`cell-${col}-${row}`}
@@ -270,11 +244,11 @@ const TableCell = ({
     setValue(e.target.value);
   };
 
-  const onFocus = (e) => {
+  const onFocus = () => {
     onCellSelect(row, col);
   };
 
-  const onBlur = (e) => {
+  const onBlur = () => {
     onCellUpdate(row, col, value);
   };
 
