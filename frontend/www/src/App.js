@@ -1,6 +1,7 @@
 /* eslint-disable no-unused-vars */
-import React, { useContext } from "react";
-import {
+import React, {
+  memo,
+  useContext,
   useEffect,
   useState,
   useCallback,
@@ -22,7 +23,7 @@ const CellsContext = createContext();
 const CellsProvider = (props) => {
   const [cells, setCells] = useState(initialCells);
 
-  const updateCell = (row, col, raw) => {
+  const updateCell = useCallback((row, col, raw) => {
     setCells((prevCells) => {
       const idx = getCellIndex(row, col, width);
       if (raw === prevCells[idx].raw) {
@@ -36,7 +37,7 @@ const CellsProvider = (props) => {
       }
       return newCells;
     });
-  };
+  }, []);
 
   const value = { cells, updateCell };
 
@@ -205,19 +206,23 @@ const colToLetters = (col) => {
 };
 
 const TableBody = ({ width, height, focusedCellIndex, onCellFocus }) => {
+  const { cells, updateCell } = useContext(CellsContext);
   const rows = range(height).map((row) => {
     return (
-      <tr key={`row-${row}`}>
+      <tr key={row}>
         <td className="cell-header">{row + 1}</td>
         {range(width).map((col) => {
           const idx = getCellIndex(row, col, width);
+          const cell = cells[idx];
           return (
-            <TableCell
+            <MemoTableCell
               key={idx}
               row={row}
               col={col}
+              cell={cell}
               isFocused={focusedCellIndex === idx}
-              onCellFocus={onCellFocus}
+              onFocus={onCellFocus}
+              onUpdate={updateCell}
             />
           );
         })}
@@ -228,22 +233,12 @@ const TableBody = ({ width, height, focusedCellIndex, onCellFocus }) => {
   return <tbody>{rows}</tbody>;
 };
 
-const TableCell = ({ row, col, isFocused, onCellFocus }) => {
-  const { cells, updateCell } = useContext(CellsContext);
-  const idx = getCellIndex(row, col, width);
-  const cell = cells[idx];
-  return useMemo(() => {
-    return isFocused ? (
-      <FocusedTableCell row={row} col={col} cell={cell} onBlur={updateCell} />
-    ) : (
-      <UnfocusedTableCell
-        row={row}
-        col={col}
-        cell={cell}
-        onFocus={onCellFocus}
-      />
-    );
-  }, [row, col, cell, updateCell, isFocused, onCellFocus]);
+const TableCell = ({ row, col, cell, isFocused, onFocus, onUpdate }) => {
+  return isFocused ? (
+    <FocusedTableCell row={row} col={col} cell={cell} onBlur={onUpdate} />
+  ) : (
+    <UnfocusedTableCell row={row} col={col} cell={cell} onFocus={onFocus} />
+  );
 };
 
 const FocusedTableCell = ({ row, col, cell, onBlur }) => {
@@ -280,6 +275,8 @@ const UnfocusedTableCell = ({ row, col, cell, onFocus }) => {
     </td>
   );
 };
+
+const MemoTableCell = memo(TableCell);
 
 const range = (upper) => {
   return [...Array(upper).keys()];
