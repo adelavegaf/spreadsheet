@@ -17,12 +17,42 @@ const initFocusedCell = { row: 0, col: 0 };
 const width = ss.width();
 const height = ss.height();
 
+const CellsContext = createContext();
+
+const CellsProvider = (props) => {
+  const [cells, setCells] = useState(initialCells);
+
+  const updateCell = (row, col, raw) => {
+    setCells((prevCells) => {
+      const idx = getCellIndex(row, col, width);
+      if (raw === prevCells[idx].raw) {
+        return prevCells;
+      }
+      const updates = ss.set(row, col, raw);
+
+      const newCells = [...prevCells];
+      for (const [idx, cell] of Object.entries(updates)) {
+        newCells[idx] = cell;
+      }
+      return newCells;
+    });
+  };
+
+  const value = { cells, updateCell };
+
+  return (
+    <CellsContext.Provider value={value}>
+      {props.children}
+    </CellsContext.Provider>
+  );
+};
+
 const App = () => {
   return (
-    <>
+    <CellsProvider>
       {/* <Participants participants={participants} isOnline={isOnline} /> */}
       <Sheet />
-    </>
+    </CellsProvider>
   );
 };
 
@@ -63,30 +93,15 @@ const FocusedCellValueProvider = (props) => {
 
 const Sheet = () => {
   // sheet specific
-  const [cells, setCells] = useState(initialCells);
-  const [focusedCell, setFocusedCell] = useState(initFocusedCell);
+  const [focusedCellIndex, setFocusedCellIndex] = useState(0);
 
-  const onCellFocus = (row, col) => {
-    console.log("focusing", row, col);
-    const idx = getCellIndex(row, col, width);
-    setFocusedCell({ row, col });
-  };
-
-  const onFocusedCellBlur = (row, col, value) => {
-    console.log("blurring", row, col, value);
-    const idx = getCellIndex(row, col, width);
-    if (value === cells[idx].raw) {
-      return;
-    }
-    const updates = ss.set(row, col, value);
-    setCells((prevCells) => {
-      const newCells = [...prevCells];
-      for (const [idx, cell] of Object.entries(updates)) {
-        newCells[idx] = cell;
-      }
-      return newCells;
-    });
-  };
+  const onCellFocus = useCallback(
+    (row, col) => {
+      const idx = getCellIndex(row, col, width);
+      setFocusedCellIndex(idx);
+    },
+    [setFocusedCellIndex]
+  );
 
   return (
     <FocusedCellValueProvider>
@@ -94,10 +109,8 @@ const Sheet = () => {
       <Table
         width={width}
         height={height}
-        cells={cells}
+        focusedCellIndex={focusedCellIndex}
         onCellFocus={onCellFocus}
-        focusedCell={focusedCell}
-        onFocusedCellBlur={onFocusedCellBlur}
       />
     </FocusedCellValueProvider>
   );
@@ -116,14 +129,7 @@ const FormulaBar = () => {
   );
 };
 
-const Table = ({
-  width,
-  height,
-  cells,
-  onCellFocus,
-  focusedCell,
-  onFocusedCellBlur,
-}) => {
+const Table = ({ width, height, focusedCellIndex, onCellFocus }) => {
   // Ideally we would do this with useEffect but it was painfully slow to register
   // an effect on all of the cells.
   // const onKeyDown = (event) => {
@@ -153,10 +159,8 @@ const Table = ({
         <TableBody
           width={width}
           height={height}
-          cells={cells}
+          focusedCellIndex={focusedCellIndex}
           onCellFocus={onCellFocus}
-          focusedCell={focusedCell}
-          onFocusedCellBlur={onFocusedCellBlur}
         />
       </table>
     </div>
@@ -200,38 +204,20 @@ const colToLetters = (col) => {
   return String.fromCharCode(asciiCode);
 };
 
-const TableBody = ({
-  width,
-  height,
-  cells,
-  onCellFocus,
-  focusedCell,
-  onFocusedCellBlur,
-}) => {
+const TableBody = ({ width, height, focusedCellIndex, onCellFocus }) => {
   const rows = range(height).map((row) => {
     return (
       <tr key={`row-${row}`}>
         <td className="cell-header">{row + 1}</td>
         {range(width).map((col) => {
           const idx = getCellIndex(row, col, width);
-          const cell = cells[idx];
-          const key = `cell-${idx}`;
-          const isFocused = focusedCell.row === row && focusedCell.col === col;
-          return isFocused ? (
-            <FocusedTableCell
-              key={key}
-              row={row}
-              col={col}
-              cell={cell}
-              onBlur={onFocusedCellBlur}
-            />
-          ) : (
+          return (
             <TableCell
-              key={key}
+              key={idx}
               row={row}
               col={col}
-              cell={cell}
-              onFocus={onCellFocus}
+              isFocused={focusedCellIndex === idx}
+              onCellFocus={onCellFocus}
             />
           );
         })}
@@ -240,6 +226,24 @@ const TableBody = ({
   });
 
   return <tbody>{rows}</tbody>;
+};
+
+const TableCell = ({ row, col, isFocused, onCellFocus }) => {
+  const { cells, updateCell } = useContext(CellsContext);
+  const idx = getCellIndex(row, col, width);
+  const cell = cells[idx];
+  return useMemo(() => {
+    return isFocused ? (
+      <FocusedTableCell row={row} col={col} cell={cell} onBlur={updateCell} />
+    ) : (
+      <UnfocusedTableCell
+        row={row}
+        col={col}
+        cell={cell}
+        onFocus={onCellFocus}
+      />
+    );
+  }, [row, col, cell, updateCell, isFocused, onCellFocus]);
 };
 
 const FocusedTableCell = ({ row, col, cell, onBlur }) => {
@@ -264,7 +268,7 @@ const FocusedTableCell = ({ row, col, cell, onBlur }) => {
   );
 };
 
-const TableCell = ({ row, col, cell, onFocus }) => {
+const UnfocusedTableCell = ({ row, col, cell, onFocus }) => {
   return (
     <td className="cell">
       <input
