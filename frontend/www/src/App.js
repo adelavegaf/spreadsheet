@@ -1,6 +1,12 @@
 /* eslint-disable no-unused-vars */
-import React from "react";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useContext } from "react";
+import {
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  createContext,
+} from "react";
 import "./App.css";
 import { Spreadsheet } from "spreadsheet";
 
@@ -37,29 +43,42 @@ const App = () => {
 //   );
 // };
 
-const Sheet = () => {
-  // sheet specific
-  const [cells, setCells] = useState(initialCells);
-  const [focusedCell, setFocusedCell] = useState(initFocusedCell);
-  const [focusedCellValue, setFocusedCellValue] = useState(initCell.raw);
+const FocusedCellValueContext = createContext();
 
-  const onCellFocus = (row, col) => {
-    const idx = getCellIndex(row, col, width);
-    setFocusedCell({ row, col });
-    setFocusedCellValue(cells[idx].raw);
-  };
+const FocusedCellValueProvider = (props) => {
+  const [focusedCellValue, setFocusedCellValue] = useState(initCell.raw);
 
   const onFocusedCellValueChange = (value) => {
     setFocusedCellValue(value);
   };
 
-  const onFocusedCellBlur = (row, col) => {
-    console.log("blurring", row, col);
+  const value = { focusedCellValue, onFocusedCellValueChange };
+
+  return (
+    <FocusedCellValueContext.Provider value={value}>
+      {props.children}
+    </FocusedCellValueContext.Provider>
+  );
+};
+
+const Sheet = () => {
+  // sheet specific
+  const [cells, setCells] = useState(initialCells);
+  const [focusedCell, setFocusedCell] = useState(initFocusedCell);
+
+  const onCellFocus = (row, col) => {
+    console.log("focusing", row, col);
     const idx = getCellIndex(row, col, width);
-    if (focusedCellValue === cells[idx].raw) {
+    setFocusedCell({ row, col });
+  };
+
+  const onFocusedCellBlur = (row, col, value) => {
+    console.log("blurring", row, col, value);
+    const idx = getCellIndex(row, col, width);
+    if (value === cells[idx].raw) {
       return;
     }
-    const updates = ss.set(row, col, focusedCellValue);
+    const updates = ss.set(row, col, value);
     setCells((prevCells) => {
       const newCells = [...prevCells];
       for (const [idx, cell] of Object.entries(updates)) {
@@ -70,31 +89,29 @@ const Sheet = () => {
   };
 
   return (
-    <>
-      <FormulaBar
-        value={focusedCellValue}
-        onChange={onFocusedCellValueChange}
-      />
+    <FocusedCellValueProvider>
+      <FormulaBar />
       <Table
         width={width}
         height={height}
         cells={cells}
         onCellFocus={onCellFocus}
         focusedCell={focusedCell}
-        focusedCellValue={focusedCellValue}
-        onFocusedCellValueChange={onFocusedCellValueChange}
         onFocusedCellBlur={onFocusedCellBlur}
       />
-    </>
+    </FocusedCellValueProvider>
   );
 };
 
-const FormulaBar = ({ value, onChange }) => {
+const FormulaBar = () => {
+  const { focusedCellValue, onFocusedCellValueChange } = useContext(
+    FocusedCellValueContext
+  );
   return (
     <input
-      value={value}
+      value={focusedCellValue}
       style={{ width: "100%" }}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => onFocusedCellValueChange(e.target.value)}
     />
   );
 };
@@ -105,8 +122,6 @@ const Table = ({
   cells,
   onCellFocus,
   focusedCell,
-  focusedCellValue,
-  onFocusedCellValueChange,
   onFocusedCellBlur,
 }) => {
   // Ideally we would do this with useEffect but it was painfully slow to register
@@ -141,8 +156,6 @@ const Table = ({
           cells={cells}
           onCellFocus={onCellFocus}
           focusedCell={focusedCell}
-          focusedCellValue={focusedCellValue}
-          onFocusedCellValueChange={onFocusedCellValueChange}
           onFocusedCellBlur={onFocusedCellBlur}
         />
       </table>
@@ -193,8 +206,6 @@ const TableBody = ({
   cells,
   onCellFocus,
   focusedCell,
-  focusedCellValue,
-  onFocusedCellValueChange,
   onFocusedCellBlur,
 }) => {
   const rows = range(height).map((row) => {
@@ -211,8 +222,7 @@ const TableBody = ({
               key={key}
               row={row}
               col={col}
-              value={focusedCellValue}
-              onChange={onFocusedCellValueChange}
+              cell={cell}
               onBlur={onFocusedCellBlur}
             />
           ) : (
@@ -220,7 +230,7 @@ const TableBody = ({
               key={key}
               row={row}
               col={col}
-              value={cell.raw ? cell.out : ""}
+              cell={cell}
               onFocus={onCellFocus}
             />
           );
@@ -232,27 +242,35 @@ const TableBody = ({
   return <tbody>{rows}</tbody>;
 };
 
-const FocusedTableCell = ({ row, col, value, onChange, onBlur }) => {
+const FocusedTableCell = ({ row, col, cell, onBlur }) => {
+  const { focusedCellValue, onFocusedCellValueChange } = useContext(
+    FocusedCellValueContext
+  );
+
+  useEffect(() => {
+    onFocusedCellValueChange(cell.raw);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <td className="cell">
       <input
         className="cell-input"
-        onChange={(e) => onChange(e.target.value)}
-        onBlur={() => onBlur(row, col)}
-        value={value}
+        value={focusedCellValue}
+        onChange={(e) => onFocusedCellValueChange(e.target.value)}
+        onBlur={() => onBlur(row, col, focusedCellValue)}
         autoFocus
       />
     </td>
   );
 };
 
-const TableCell = ({ row, col, value, onFocus }) => {
+const TableCell = ({ row, col, cell, onFocus }) => {
   return (
     <td className="cell">
       <input
         className="cell-input"
         onFocus={() => onFocus(row, col)}
-        value={value}
+        value={cell.raw ? cell.out : ""}
         readOnly
       />
     </td>
