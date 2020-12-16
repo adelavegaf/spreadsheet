@@ -225,12 +225,21 @@ const TableBody = ({
               onChange={onFocusedCellValueChange}
             />
           ) : (
-            <UnfocusedTableCell key={idx} cell={cell} />
+            <UnfocusedTableCell key={idx} index={idx} cell={cell} />
           );
         })}
       </tr>
     );
   });
+
+  const onClick = (event) => {
+    // See comment on UnfocusedTableCell's onClick to understand why this works
+    const idx = event.cellIndex;
+    if (!idx) {
+      return;
+    }
+    onFocusedCellUpdate(idx, true);
+  };
 
   const onKeyDown = (event) => {
     if (!UPDATE_KEYS_SET.has(event.key)) {
@@ -244,7 +253,11 @@ const TableBody = ({
     onFocusedCellUpdate(nextIndex, shouldUpdate);
   };
 
-  return <tbody onKeyDown={onKeyDown}>{rows}</tbody>;
+  return (
+    <tbody onClick={onClick} onKeyDown={onKeyDown}>
+      {rows}
+    </tbody>
+  );
 };
 
 const FocusedTableCell = ({ value, onChange }) => {
@@ -260,10 +273,28 @@ const FocusedTableCell = ({ value, onChange }) => {
   );
 };
 
-const _UnfocusedTableCell = ({ cell }) => {
+const _UnfocusedTableCell = ({ index, cell }) => {
+  const onClick = (event) => {
+    // HACK: we can't pass the onFocusedCellUpdate fn to our cells or
+    // we will trigger a re-render of all cells whenever a single cell
+    // changes.
+    //
+    // As a workaround, we will piggyback on the event to store the index
+    // of the cell that was just clicked, to call onFocusedCellUpdate from
+    // the table body. Browsers guarantee events are propagated from
+    // specific -> general, so the cell is always to come first than the
+    // table body.
+    event.cellIndex = index;
+  };
+
   return (
     <td className="cell">
-      <input className="cell-input" value={cell.raw ? cell.out : ""} readOnly />
+      <input
+        className="cell-input"
+        value={cell.raw ? cell.out : ""}
+        onClick={onClick}
+        readOnly
+      />
     </td>
   );
 };
