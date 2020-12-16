@@ -5,7 +5,6 @@ import React, {
   useEffect,
   useState,
   useCallback,
-  useMemo,
   createContext,
 } from "react";
 import "./App.css";
@@ -14,7 +13,6 @@ import { Spreadsheet } from "spreadsheet";
 const ss = Spreadsheet.new();
 const initialCells = ss.cells();
 const initCell = initialCells[0];
-const initFocusedCell = { row: 0, col: 0 };
 const width = ss.width();
 const height = ss.height();
 
@@ -93,7 +91,6 @@ const FocusedCellValueProvider = (props) => {
 };
 
 const Sheet = () => {
-  // sheet specific
   const [focusedCellIndex, setFocusedCellIndex] = useState(0);
 
   const onCellFocus = useCallback(
