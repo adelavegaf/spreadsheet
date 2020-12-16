@@ -235,7 +235,7 @@ const TableBody = ({
   const onClick = (event) => {
     // See comment on UnfocusedTableCell's onClick to understand why this works
     const idx = event.cellIndex;
-    if (!idx) {
+    if (idx === undefined || idx === null) {
       return;
     }
     onFocusedCellUpdate(idx, true);
