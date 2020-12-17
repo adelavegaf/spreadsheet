@@ -1,17 +1,20 @@
 /*
 Grammar
 
-Cell ::= Number | Formula
+Cell ::= Rational Number | Formula
 Formula ::= “=“ Expr
 Expr ::= Term ('+' Term | '-' Term)*
 Term ::= Factor ('*' Factor | '/' Factor)*
 Factor ::= ['-'] (Value | '(' Expr ')')
-Value ::= Function | Coordinate | Number
-Function ::= FnId '(' Range ')'
-Range ::= Coordinate ':' Coordinate
-Coordinate ::= Letters Number
+Value ::= Function | Coordinate | Rational Number
+Function ::= FnId '(' Range ')' (TODO: implement)
+Range ::= Coordinate ':' Coordinate (TODO: implement)
+Coordinate ::= Letters Natural Number
 Letters ::= Letter+
-Number ::= Digit+
+Natural Number ::= Digit+
+Rational Number ::= [-] Digit+ ['.' Digit+] (TODO: check if adding [-] breaks Factor)
+Digit ::= [0-9]
+Letter ::= [a-z][A-Z]
 
 TODO:
 - Improve error handling while parsing. Ideally, we would get "unexpected token in line x col y, found: w expected z"
@@ -101,7 +104,7 @@ impl BinaryOp {
 
 pub fn cell(input: &str) -> ParseResult<ExprTree> {
   // Cell ::= Number | Formula
-  let num_node = map(number, |n| ExprTree::Leaf(ValueNode::Num(n)));
+  let num_node = map(rational_number, |n| ExprTree::Leaf(ValueNode::Num(n)));
   let (tree, input) = either(num_node, formula).parse(input)?;
   if !input.is_empty() {
     Err("Expected input to be empty")
@@ -168,7 +171,7 @@ fn factor(mut input: &str) -> ParseResult<ExprTree> {
 
 fn value(input: &str) -> ParseResult<ExprTree> {
   // Value ::= Coord | Function | Number
-  let num_val = map(number, ValueNode::Num);
+  let num_val = map(rational_number, ValueNode::Num);
   let num_or_coord = either(num_val, coord);
   let (val, input) = num_or_coord.parse(input)?;
   Ok((ExprTree::Leaf(val), input))
@@ -179,7 +182,7 @@ fn coord(input: &str) -> ParseResult<ValueNode> {
   let (ltrs, input) = letters(input)?;
   let col = letters_to_col(&ltrs);
   // TODO(adelavega): We should have a float, and int parser, and use int here.
-  let (num, input) = number(input)?;
+  let (num, input) = natural_number(input)?;
   // Convert to 0-based index before returning
   let row = (num as usize) - 1;
   Ok((ValueNode::Coord(row, col), input))
@@ -229,11 +232,31 @@ fn reduce_trees(first: ExprTree, others: Vec<(BinaryOp, ExprTree)>) -> ExprTree 
   ExprTree::Binary(Box::new(node))
 }
 
-fn number(input: &str) -> ParseResult<f64> {
+fn rational_number(input: &str) -> ParseResult<f64> {
+  // Rational Number := [-] Digit+ [. Digit+]
+  let (negate_opt, input) = optional(literal("-")).parse(input)?;
+  let neg_coefficient = if negate_opt.is_some() { -1. } else { 1. };
+  let (first_num, input) = digits(input)?;
+  let (dot_opt, input) = optional(literal(".")).parse(input)?;
+  let (full_num, input) = if dot_opt.is_some() {
+    let (second_num, input) = digits(input)?;
+    (format!("{}.{}", first_num, second_num), input)
+  } else {
+    (first_num, input)
+  };
+  let rational_num = full_num.parse::<f64>().unwrap() * neg_coefficient;
+  Ok((rational_num, input))
+}
+
+fn natural_number(input: &str) -> ParseResult<f64> {
   // Number ::= Digit+
+  let (num, input) = digits(input)?;
+  Ok((num.parse().unwrap(), input))
+}
+
+fn digits(input: &str) -> ParseResult<String> {
   let (num_vec, input) = one_or_more(predicate(any_char, |c| c.is_numeric())).parse(input)?;
-  let num = num_vec.into_iter().collect::<String>().parse().unwrap();
-  Ok((num, input))
+  Ok((num_vec.into_iter().collect::<String>(), input))
 }
 
 // Generic Parsers
@@ -247,6 +270,16 @@ fn any_char(input: &str) -> ParseResult<char> {
 }
 
 // Combinators
+
+fn optional<'a, A>(parser: impl Parser<'a, A>) -> impl Parser<'a, Option<A>> {
+  move |input: &'a str| {
+    if let Ok((a, input)) = parser.parse(input) {
+      Ok((Some(a), input))
+    } else {
+      Ok((None, input))
+    }
+  }
+}
 
 fn right<'a, A, B>(parser1: impl Parser<'a, A>, parser2: impl Parser<'a, B>) -> impl Parser<'a, B> {
   move |input: &'a str| {
