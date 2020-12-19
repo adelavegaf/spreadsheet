@@ -1,5 +1,6 @@
-mod parser;
-use parser::{cell, ExprTree, ValueNode};
+pub mod parser;
+
+use parser::{ExprResult, ExprTree};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::mem;
@@ -14,7 +15,7 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Cell {
     raw: String,
-    out: f64,
+    out: ExprResult,
     #[serde(skip)]
     expr: ExprTree,
     #[serde(skip)]
@@ -28,7 +29,7 @@ impl Default for Cell {
         Cell {
             raw: "".to_string(),
             expr: ExprTree::Empty,
-            out: 0.,
+            out: ExprResult::Text("".to_string()),
             outbound: HashSet::new(),
             inbound: HashSet::new(),
         }
@@ -40,8 +41,8 @@ impl Cell {
         Default::default()
     }
 
-    pub fn out(&self) -> f64 {
-        self.out
+    pub fn out(&self) -> &ExprResult {
+        &self.out
     }
 }
 
@@ -108,10 +109,10 @@ impl Spreadsheet {
         }
 
         // Create new cell
-        let (expr, _) = cell(raw)?;
-        let out = eval(self, &expr);
+        let (expr, _) = ExprTree::new(raw)?;
+        let out = expr.eval(self);
         let mut outbound = HashSet::new();
-        fill_outbound(self, &expr, &mut outbound);
+        expr.fill_outbound(self, &mut outbound);
         let inbound = old_cell.inbound.clone();
         let new_cell = Cell {
             raw: raw.to_string(),
@@ -136,7 +137,7 @@ impl Spreadsheet {
         // order we should re-eval our dependencies.
         let eval_order = self.toposort_inbound(cur_idx);
         for in_idx in &eval_order {
-            let new_out = eval(self, &self.cells[*in_idx].expr);
+            let new_out = self.cells[*in_idx].expr.eval(self);
             self.cells[*in_idx].out = new_out;
         }
 
@@ -189,30 +190,5 @@ impl Spreadsheet {
     pub fn get(&self, row: usize, col: usize) -> &Cell {
         let idx = self.get_index(row, col);
         &self.cells[idx]
-    }
-}
-
-fn eval(ss: &Spreadsheet, tree: &ExprTree) -> f64 {
-    match tree {
-        ExprTree::Leaf(ValueNode::Num(n)) => *n,
-        ExprTree::Leaf(ValueNode::Coord(row, col)) => ss.get(*row, *col).out,
-        ExprTree::Unary(u) => u.op.apply(eval(ss, &u.child)),
-        ExprTree::Binary(b) => b.op.apply(eval(ss, &b.left), eval(ss, &b.right)),
-        ExprTree::Empty => panic!("Found empty tree node"),
-    }
-}
-
-fn fill_outbound(ss: &Spreadsheet, tree: &ExprTree, outbound: &mut HashSet<usize>) {
-    match tree {
-        ExprTree::Leaf(ValueNode::Num(_)) => (),
-        ExprTree::Leaf(ValueNode::Coord(row, col)) => {
-            outbound.insert(ss.get_index(*row, *col));
-        }
-        ExprTree::Unary(u) => fill_outbound(ss, &u.child, outbound),
-        ExprTree::Binary(b) => {
-            fill_outbound(ss, &b.left, outbound);
-            fill_outbound(ss, &b.right, outbound);
-        }
-        ExprTree::Empty => panic!("Found empty tree node"),
     }
 }
