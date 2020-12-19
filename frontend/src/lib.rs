@@ -1,6 +1,7 @@
+pub mod expr;
 pub mod parser;
 
-use parser::{ExprResult, ExprTree};
+use expr::{ExprResult, ExprTree};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::mem;

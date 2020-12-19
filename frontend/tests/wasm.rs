@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 extern crate wasm_bindgen_test;
-use spreadsheet::parser::ExprResult;
+use spreadsheet::expr::ExprResult;
 use spreadsheet::{Cell, Spreadsheet};
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
