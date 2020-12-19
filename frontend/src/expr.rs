@@ -58,6 +58,7 @@ impl Default for ExprTree {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", content = "value")]
 pub enum ExprResult {
   Num(f64),
   Text(String),
