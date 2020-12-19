@@ -19,10 +19,26 @@ body {
 }
 
 .cell-input {
-  min-width: 72px;
+  min-width: 144px;
+  max-width: 144px;
   border-style: none;
   border-radius: 0px;
   color: rgb(65, 65, 65);
+}
+
+.cell-text {
+  text-align: left;
+}
+
+.cell-error {
+  text-align: center;
+  border-left: 5px;
+  border-left-color: red;
+  border-left-style: solid;
+}
+
+.cell-num {
+  text-align: right;
 }
 
 .cell {

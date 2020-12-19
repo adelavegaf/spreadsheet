@@ -287,15 +287,23 @@ const _UnfocusedTableCell = ({ index, cell }) => {
     event.cellIndex = index;
   };
 
-  // TODO: style cells based on their out contents:
-  // Nums are right aligned
-  // Text is left aligned
-  // Errors are center aligned + corner with a red triangle + tooltip displaying error msg.
+  let className = "cell-input";
+  switch (cell.out.type) {
+    case "Error":
+      className += " cell-error";
+      break;
+    case "Text":
+      className += " cell-text";
+      break;
+    case "Num":
+      className += " cell-num";
+      break;
+  }
 
   return (
     <td className="cell">
       <input
-        className="cell-input"
+        className={className}
         value={cell.out.value}
         onClick={onClick}
         readOnly
