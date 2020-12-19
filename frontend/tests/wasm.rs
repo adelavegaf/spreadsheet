@@ -19,12 +19,16 @@ fn set_accepts_text() {
 }
 
 #[wasm_bindgen_test]
-fn set_evals_formula_fails_text_addition() {
+fn set_parse_fails_formula_with_text_addition() {
   let mut ss = Spreadsheet::new();
   let r1 = 0;
   let c1 = 0;
+  ss.set(r1, c1, "=test+test").unwrap();
 
-  assert!(ss.set(r1, c1, "=test+test").is_err());
+  match *ss.get(r1, c1).out() {
+    ExprResult::Error(_) => (),
+    _ => panic!("expected parse error"),
+  };
 }
 
 #[wasm_bindgen_test]
@@ -62,6 +66,19 @@ fn set_evals_formula_with_text_ref() {
   let c1 = 1;
   ss.set(r1, c1, "=A1").unwrap();
   assert_eq!(*ss.get(r1, c1).out(), ExprResult::Text("a".to_string()));
+}
+
+#[wasm_bindgen_test]
+fn set_evals_fails_formula_with_text_addition() {
+  let mut ss = Spreadsheet::new();
+  ss.set(0, 0, "a").unwrap();
+  let r1 = 0;
+  let c1 = 1;
+  ss.set(r1, c1, "=A1+1").unwrap();
+  match *ss.get(r1, c1).out() {
+    ExprResult::Error(_) => (),
+    _ => panic!("expected eval error"),
+  };
 }
 
 #[wasm_bindgen_test]

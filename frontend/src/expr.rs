@@ -1,4 +1,4 @@
-use super::parser::{cell, ParseResult};
+use super::parser::cell;
 use super::Spreadsheet;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -7,19 +7,24 @@ use std::ops;
 #[derive(Clone)]
 pub enum ExprTree {
   Empty,
+  Error(String),
   Leaf(ValueNode),
   Unary(Box<UnaryNode>),
   Binary(Box<BinaryNode>),
 }
 
 impl ExprTree {
-  pub fn new(input: &str) -> ParseResult<ExprTree> {
-    cell(input)
+  pub fn new(input: &str) -> ExprTree {
+    match cell(input) {
+      Ok((expr, _)) => expr,
+      Err(e) => ExprTree::Error(e.to_string()),
+    }
   }
 
   pub fn eval(&self, ss: &Spreadsheet) -> ExprResult {
     match self {
       ExprTree::Empty => ExprResult::Text("".to_string()),
+      ExprTree::Error(e) => ExprResult::Error(e.clone()),
       ExprTree::Leaf(ValueNode::Num(n)) => ExprResult::Num(*n),
       ExprTree::Leaf(ValueNode::Coord(row, col)) => ss.get(*row, *col).out.clone(),
       ExprTree::Leaf(ValueNode::Text(t)) => ExprResult::Text(t.clone()),
@@ -31,6 +36,7 @@ impl ExprTree {
   pub fn fill_outbound(&self, ss: &Spreadsheet, outbound: &mut HashSet<usize>) {
     match self {
       ExprTree::Empty => (),
+      ExprTree::Error(_) => (),
       ExprTree::Leaf(ValueNode::Text(_)) => (),
       ExprTree::Leaf(ValueNode::Num(_)) => (),
       ExprTree::Leaf(ValueNode::Coord(row, col)) => {

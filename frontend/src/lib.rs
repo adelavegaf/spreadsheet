@@ -110,7 +110,7 @@ impl Spreadsheet {
         }
 
         // Create new cell
-        let (expr, _) = ExprTree::new(raw)?;
+        let expr = ExprTree::new(raw);
         let out = expr.eval(self);
         let mut outbound = HashSet::new();
         expr.fill_outbound(self, &mut outbound);
