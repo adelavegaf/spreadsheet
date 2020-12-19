@@ -59,7 +59,7 @@ fn num(input: &str) -> ParseResult<ExprTree> {
 }
 
 fn text(input: &str) -> ParseResult<ExprTree> {
-  let multiple_chars = one_or_more(any_char);
+  let multiple_chars = zero_or_more(any_char);
   map(multiple_chars, |c| {
     ExprTree::Leaf(ValueNode::Text(c.into_iter().collect()))
   })
