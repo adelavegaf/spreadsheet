@@ -1,9 +1,9 @@
 import React, { memo, useContext, useState } from "react";
-import { CellsContext } from "./CellsProvider";
+import { AppContext } from "./AppProvider";
 import { getCellIndex, getCellRowCol } from "./Utils";
 
 export const Sheet = () => {
-  const { cells, width, height, setCell } = useContext(CellsContext);
+  const { cells, width, height, setCell } = useContext(AppContext);
   const [focusedCellIndex, setFocusedCellIndex] = useState(0);
   const [focusedCellValue, setFocusedCellValue] = useState(
     cells[focusedCellIndex].raw
@@ -144,7 +144,7 @@ const TableBody = ({
   onFocusedCellValueChange,
   onFocusedCellUpdate,
 }) => {
-  const { cells } = useContext(CellsContext);
+  const { cells } = useContext(AppContext);
 
   let idx = 0;
   const rows = range(height).map((row) => {

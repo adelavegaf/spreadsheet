@@ -18,14 +18,12 @@ pub enum Event {
     ids: HashSet<usize>,
   },
   CellLocked {
-    row: usize,
-    col: usize,
-    // User ID of who is locking the cell
-    locker_id: usize,
+    cell_idx: usize,
+    user_id: usize,
   },
   CellUpdated {
-    row: usize,
-    col: usize,
+    cell_idx: usize,
+    user_id: usize,
     raw: String,
   },
 }

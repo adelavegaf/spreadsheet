@@ -1,40 +1,16 @@
-/* eslint-disable no-unused-vars */
-import React, {
-  memo,
-  useContext,
-  useEffect,
-  useState,
-  useCallback,
-  createContext,
-} from "react";
-import { CellsContext, CellsProvider } from "./CellsProvider";
+import React from "react";
+import { AppProvider } from "./AppProvider";
 import "./App.css";
 import { Sheet } from "./Sheet";
+import { Participants } from "./Participants";
 
 const App = () => {
   return (
-    <CellsProvider>
-      {/* <Participants participants={participants} isOnline={isOnline} /> */}
+    <AppProvider>
+      <Participants />
       <Sheet />
-    </CellsProvider>
+    </AppProvider>
   );
 };
-
-// const Participants = ({ participants, isOnline }) => {
-//   return (
-//     <div className="participant-container">
-//       <span
-//         className={isOnline ? "online-status online" : "online-status offline"}
-//       />
-//       {participants.map((p) => {
-//         return (
-//           <span key={p} className="participant-tag">
-//             {p}
-//           </span>
-//         );
-//       })}
-//     </div>
-//   );
-// };
 
 export default App;
