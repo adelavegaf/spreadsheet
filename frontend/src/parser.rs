@@ -55,26 +55,21 @@ pub fn cell(input: &str) -> ParseResult<ExprTree> {
 }
 
 fn num(input: &str) -> ParseResult<ExprTree> {
-  map(rational_number, |n| ExprTree::Leaf(ValueNode::Num(n))).parse(input)
+  empty_or_err(map(rational_number, |n| ExprTree::Leaf(ValueNode::Num(n)))).parse(input)
 }
 
 fn text(input: &str) -> ParseResult<ExprTree> {
   let multiple_chars = zero_or_more(any_char);
-  map(multiple_chars, |c| {
+  empty_or_err(map(multiple_chars, |c| {
     ExprTree::Leaf(ValueNode::Text(c.into_iter().collect()))
-  })
+  }))
   .parse(input)
 }
 
 fn formula(input: &str) -> ParseResult<ExprTree> {
   // Formula ::= “=“ Expr
   let (_, input) = literal("=").parse(input)?;
-  let (res, input) = expr(input)?;
-  if input.is_empty() {
-    Ok((res, input))
-  } else {
-    Err("Expected input to be empty")
-  }
+  empty_or_err(expr).parse(input)
 }
 
 fn expr(input: &str) -> ParseResult<ExprTree> {
@@ -223,6 +218,17 @@ fn any_char(input: &str) -> ParseResult<char> {
 }
 
 // Combinators
+
+fn empty_or_err<'a, A>(parser: impl Parser<'a, A>) -> impl Parser<'a, A> {
+  move |input: &'a str| {
+    let (res, input) = parser.parse(input)?;
+    if input.is_empty() {
+      Ok((res, ""))
+    } else {
+      Err("expected input to be empty")
+    }
+  }
+}
 
 fn optional<'a, A>(parser: impl Parser<'a, A>) -> impl Parser<'a, Option<A>> {
   move |input: &'a str| {
@@ -417,6 +423,20 @@ mod tests {
 
       assert!(p.parse("bcd").is_err());
       assert_eq!(p.parse("abc"), Ok(((), "c")));
+    }
+
+    #[test]
+    fn optional_smoketest() {
+      let p = optional(literal("a"));
+      assert_eq!(p.parse("abc"), Ok((Some(()), "bc")));
+      assert_eq!(p.parse("bc"), Ok((None, "bc")));
+    }
+
+    #[test]
+    fn empty_or_err_smoketest() {
+      let p = empty_or_err(literal("a"));
+      assert_eq!(p.parse("a"), Ok(((), "")));
+      assert!(p.parse("ab").is_err());
     }
   }
 }
