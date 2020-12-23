@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS sheets;
+
+DROP TABLE IF EXISTS cells;

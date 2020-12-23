@@ -1,9 +1,17 @@
+#[macro_use]
+extern crate diesel;
+extern crate dotenv;
+
 use std::time::{Duration, Instant};
 
 use actix::prelude::*;
 use actix_web::{middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use actix_web_actors::ws;
+use dotenv::dotenv;
+use std::env;
 
+pub mod models;
+pub mod schema;
 mod server;
 
 /// How often heartbeat pings are sent
@@ -121,7 +129,9 @@ async fn main() -> std::io::Result<()> {
     std::env::set_var("RUST_LOG", "actix_server=info,actix_web=info");
     env_logger::init();
 
-    let server = server::WsServer::default().start();
+    dotenv().ok();
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let server = server::WsServer::new(&db_url).start();
 
     HttpServer::new(move || {
         App::new()

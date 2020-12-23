@@ -6,7 +6,7 @@ import React, {
   useEffect,
 } from "react";
 import { Spreadsheet } from "spreadsheet";
-import { getCellRowCol } from "./Utils";
+import { getCellIndex, getCellRowCol } from "./Utils";
 
 export const AppContext = createContext();
 
@@ -40,13 +40,18 @@ export const AppProvider = (props) => {
     (event) => {
       switch (event.type) {
         case "Connected":
-          setUserId(event.id);
+          setUserId(event.user_id);
+          // TODO: Ideally we would wait until we got the cells to create the SS WASM object.
+          event.cells.map((c) => {
+            console.log("setting");
+            localSetCell(getCellIndex(c.row, c.col, width), c.raw);
+          });
           break;
         case "Participants":
           setParticipants(event.ids);
           break;
         case "CellUpdated":
-          localSetCell(event.cell_idx, event.raw);
+          localSetCell(getCellIndex(event.row, event.col, width), event.raw);
           break;
         case "CellLocked":
           // TODO: handle cell locked events
@@ -56,7 +61,7 @@ export const AppProvider = (props) => {
           break;
       }
     },
-    [localSetCell]
+    [width, localSetCell]
   );
   const [ws, isOnline] = useWs(onWsEvent);
 
@@ -64,18 +69,21 @@ export const AppProvider = (props) => {
     (index, raw) => {
       // TODO: this is sending events even if the cell didnt have its contents changed.
       if (isOnline && userId) {
+        const [row, col] = getCellRowCol(index, width);
         ws.current.send(
           JSON.stringify({
             type: "CellUpdated",
-            cell_idx: index,
             user_id: userId,
+            sheet_id: 1,
+            row: row,
+            col: col,
             raw: raw,
           })
         );
       }
       localSetCell(index, raw);
     },
-    [isOnline, userId, ws, localSetCell]
+    [isOnline, userId, ws, width, localSetCell]
   );
 
   const value = {
