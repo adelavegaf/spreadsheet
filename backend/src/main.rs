@@ -39,7 +39,7 @@ async fn ws_index(
 }
 
 struct WsSession {
-    id: usize,
+    id: i32,
     /// Client must send ping at least once per 10 seconds (CLIENT_TIMEOUT),
     /// otherwise we drop connection.
     hb: Instant,
@@ -74,10 +74,10 @@ impl Actor for WsSession {
     }
 }
 
-impl Handler<server::Event> for WsSession {
+impl Handler<server::Response> for WsSession {
     type Result = ();
 
-    fn handle(&mut self, msg: server::Event, ctx: &mut Self::Context) {
+    fn handle(&mut self, msg: server::Response, ctx: &mut Self::Context) {
         let json = serde_json::to_string(&msg).unwrap();
         ctx.text(json);
     }

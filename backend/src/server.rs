@@ -11,24 +11,11 @@ use rand::{self, rngs::ThreadRng, Rng};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-// TODO: We should probably have a separate struct/enum for user requests and another
-// one for responses
-#[derive(Clone, Debug, Message, Serialize, Deserialize)]
-#[rtype(result = "()")]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
-pub enum Event {
-  Connected {
-    user_id: usize,
-    cells: Vec<Cell>,
-  },
-  Participants {
-    ids: HashSet<usize>,
-  },
-  CellLocked {
-    cell_idx: usize,
-    user_id: usize,
-  },
-  CellUpdated {
+pub enum Request {
+  UpdateCell {
+    user_id: i32,
     sheet_id: i32,
     row: i32,
     col: i32,
@@ -36,23 +23,34 @@ pub enum Event {
   },
 }
 
+#[derive(Clone, Debug, Message, Serialize, Deserialize)]
+#[rtype(result = "()")]
+#[serde(tag = "type")]
+pub enum Response {
+  Connected { user_id: i32, cells: Vec<Cell> },
+  Participants { ids: HashSet<i32> },
+  CellLocked { user_id: i32, cell: Cell },
+  CellUpdated { user_id: i32, cell: Cell },
+  Error { message: String },
+}
+
 #[derive(Message)]
-#[rtype(usize)]
+#[rtype(i32)]
 pub struct Connect {
-  pub sheet_id: usize,
-  pub addr: Recipient<Event>,
+  pub sheet_id: i32,
+  pub addr: Recipient<Response>,
 }
 
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct Disconnect {
-  pub user_id: usize,
+  pub user_id: i32,
 }
 
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct Text {
-  pub user_id: usize,
+  pub user_id: i32,
   pub data: String,
 }
 
@@ -60,17 +58,16 @@ pub struct Text {
 
 pub struct WsServer {
   db: PgConnection,
-  // User ID -> WS connections
-  user_to_addr: HashMap<usize, Recipient<Event>>,
+  // User ID -> WebSocket Actor
+  user_to_addr: HashMap<i32, Recipient<Response>>,
   // Spreadsheet ID -> User IDs
-  sheet_to_users: HashMap<usize, HashSet<usize>>,
+  sheet_to_users: HashMap<i32, HashSet<i32>>,
   // User ID -> Spreadsheet ID
-  user_to_sheet: HashMap<usize, usize>,
+  user_to_sheet: HashMap<i32, i32>,
   rng: ThreadRng,
 }
 
 impl WsServer {
-  // TODO(adelavega): proper error handling on all methods -- unwrapping is not sane
   pub fn new(db_url: &str) -> WsServer {
     WsServer {
       db: PgConnection::establish(db_url)
@@ -81,27 +78,86 @@ impl WsServer {
       rng: rand::thread_rng(),
     }
   }
-  fn broadcast_participants(&self, sheet_id: usize) {
+
+  fn handle_req(&self, req: Request) {
+    match req {
+      Request::UpdateCell {
+        user_id,
+        sheet_id,
+        row,
+        col,
+        raw,
+      } => {
+        self.update_cell(user_id, sheet_id, row, col, raw);
+      }
+    };
+  }
+
+  fn update_cell(&self, user_id: i32, sheet_id: i32, row: i32, col: i32, raw: String) {
+    let new_cell = NewCell {
+      sheet_id,
+      row,
+      col,
+      raw,
+    };
+    match diesel::insert_into(cells::table)
+      .values(&new_cell)
+      .on_conflict((cells::sheet_id, cells::row, cells::col))
+      .do_update()
+      .set(&new_cell)
+      .get_result(&self.db)
+    {
+      Ok(cell) => {
+        let resp = Response::CellUpdated { user_id, cell };
+        self.broadcast(sheet_id, resp);
+      }
+      Err(_) => {
+        let resp = Response::Error {
+          message: format!("failed to update cell {:?}", new_cell),
+        };
+        self.send(user_id, resp);
+      }
+    };
+  }
+
+  fn broadcast_participants(&self, sheet_id: i32) {
     if let Some(user_ids) = self.sheet_to_users.get(&sheet_id) {
-      let event = Event::Participants {
+      let resp = Response::Participants {
         ids: user_ids.clone(),
       };
-      self.broadcast(sheet_id, event);
+      self.broadcast(sheet_id, resp);
     }
   }
 
-  fn send(&self, user_id: usize, event: Event) {
-    let addr = self.user_to_addr.get(&user_id).unwrap();
-    let _ = addr.do_send(event);
+  fn send(&self, user_id: i32, response: Response) {
+    println!("sending response {:?} to user {}", response, user_id);
+    match self.user_to_addr.get(&user_id) {
+      Some(addr) => {
+        let _ = addr.do_send(response);
+      }
+      None => println!("no address found for user {}", user_id),
+    };
   }
 
-  fn broadcast(&self, sheet_id: usize, event: Event) {
-    println!("broadcasting event {:?} to sheet {}", event, sheet_id);
-    let user_ids = self.sheet_to_users.get(&sheet_id).unwrap();
+  fn broadcast(&self, sheet_id: i32, response: Response) {
+    println!("broadcasting response {:?} to sheet {}", response, sheet_id);
+    let user_ids = match self.sheet_to_users.get(&sheet_id) {
+      Some(ids) => ids,
+      None => {
+        println!("no users found in sheet {}", sheet_id);
+        return;
+      }
+    };
     for id in user_ids {
-      let addr = self.user_to_addr.get(id).unwrap();
+      let addr = match self.user_to_addr.get(id) {
+        Some(addr) => addr,
+        None => {
+          println!("no address found for user {}", id);
+          continue;
+        }
+      };
       // Cloning on every iteration seems expensive
-      let _ = addr.do_send(event.clone());
+      let _ = addr.do_send(response.clone());
     }
   }
 }
@@ -111,13 +167,13 @@ impl Actor for WsServer {
 }
 
 impl Handler<Connect> for WsServer {
-  type Result = usize;
+  type Result = i32;
 
   fn handle(&mut self, msg: Connect, _: &mut Context<Self>) -> Self::Result {
     println!("Someone connected to sheet {}", msg.sheet_id);
 
     // register session with random id
-    let new_user_id = self.rng.gen::<usize>();
+    let new_user_id = self.rng.gen::<i32>();
     self.user_to_addr.insert(new_user_id, msg.addr);
     self.user_to_sheet.insert(new_user_id, msg.sheet_id);
 
@@ -129,17 +185,30 @@ impl Handler<Connect> for WsServer {
       .insert(new_user_id);
 
     // Get cells from spreadsheet in DB
-    let results = cells::table
+    match cells::table
       .filter(cells::sheet_id.eq(msg.sheet_id as i32))
       .load::<Cell>(&self.db)
-      .expect("Error loading posts");
-    self.send(
-      new_user_id,
-      Event::Connected {
-        user_id: new_user_id,
-        cells: results,
-      },
-    );
+    {
+      Ok(cells) => {
+        self.send(
+          new_user_id,
+          Response::Connected {
+            user_id: new_user_id,
+            cells,
+          },
+        );
+      }
+      Err(_) => {
+        // TODO: we will advertise this user joined regardless of whether he actually loaded the cells
+        // which seems off.
+        self.send(
+          new_user_id,
+          Response::Error {
+            message: "Error loading cells".to_string(),
+          },
+        )
+      }
+    };
 
     // Announce to other users that are connected to this spreadsheet someone else joined
     self.broadcast_participants(msg.sheet_id);
@@ -185,27 +254,16 @@ impl Handler<Text> for WsServer {
   type Result = ();
 
   fn handle(&mut self, msg: Text, _: &mut Context<Self>) {
-    let sheet_id = self.user_to_sheet.get(&msg.user_id).unwrap();
-    let event: Event = serde_json::from_str(&msg.data).unwrap();
-    if let Event::CellUpdated {
-      sheet_id,
-      row,
-      col,
-      raw,
-    } = &event
-    {
-      let new_cell = NewCell {
-        sheet_id: *sheet_id as i32,
-        row: *row as i32,
-        col: *col as i32,
-        raw: raw.clone(),
-      };
-      let cell: Cell = diesel::insert_into(cells::table)
-        .values(&new_cell)
-        .get_result(&self.db)
-        .expect("Error saving cell");
-      println!("inserted {:?}", cell);
-    }
-    self.broadcast(*sheet_id, event);
+    let req: Request = match serde_json::from_str(&msg.data) {
+      Ok(req) => req,
+      Err(_) => {
+        let resp = Response::Error {
+          message: format!("unable to parse request {:?}", msg.data),
+        };
+        self.send(msg.user_id, resp);
+        return;
+      }
+    };
+    self.handle_req(req);
   }
 }

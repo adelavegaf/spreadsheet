@@ -37,27 +37,27 @@ export const AppProvider = (props) => {
   const [userId, setUserId] = useState(0);
   const [participants, setParticipants] = useState([]);
   const onWsEvent = useCallback(
-    (event) => {
-      switch (event.type) {
+    (response) => {
+      switch (response.type) {
         case "Connected":
-          setUserId(event.user_id);
+          setUserId(response.user_id);
           // TODO: Ideally we would wait until we got the cells to create the SS WASM object.
-          event.cells.map((c) => {
+          response.cells.map((c) => {
             console.log("setting");
             localSetCell(getCellIndex(c.row, c.col, width), c.raw);
           });
           break;
         case "Participants":
-          setParticipants(event.ids);
+          setParticipants(response.ids);
           break;
         case "CellUpdated":
-          localSetCell(getCellIndex(event.row, event.col, width), event.raw);
-          break;
-        case "CellLocked":
-          // TODO: handle cell locked events
+          localSetCell(
+            getCellIndex(response.cell.row, response.cell.col, width),
+            response.cell.raw
+          );
           break;
         default:
-          console.error("unhandled event", event);
+          console.error("unhandled response", response);
           break;
       }
     },
@@ -72,7 +72,7 @@ export const AppProvider = (props) => {
         const [row, col] = getCellRowCol(index, width);
         ws.current.send(
           JSON.stringify({
-            type: "CellUpdated",
+            type: "UpdateCell",
             user_id: userId,
             sheet_id: 1,
             row: row,

@@ -10,7 +10,7 @@ pub struct Cell {
   pub raw: String,
 }
 
-#[derive(Insertable)]
+#[derive(AsChangeset, Debug, Insertable)]
 #[table_name = "cells"]
 pub struct NewCell {
   pub sheet_id: i32,

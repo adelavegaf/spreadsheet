@@ -7,5 +7,6 @@ CREATE TABLE cells (
   sheet_id INT NOT NULL,
   row INT NOT NULL,
   col INT NOT NULL,
-  raw VARCHAR NOT NULL
+  raw VARCHAR NOT NULL,
+  UNIQUE(sheet_id, row, col)
 );
